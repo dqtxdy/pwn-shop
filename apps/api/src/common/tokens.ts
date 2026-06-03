@@ -1,0 +1,7 @@
+export const PAWN_REPOSITORY = Symbol('PAWN_REPOSITORY');
+export const KYC_PROVIDER = Symbol('KYC_PROVIDER');
+export const LOGISTICS_PROVIDER = Symbol('LOGISTICS_PROVIDER');
+export const PRICE_ORACLE = Symbol('PRICE_ORACLE');
+export const STORAGE_PROVIDER = Symbol('STORAGE_PROVIDER');
+export const BLOCKCHAIN_GATEWAY = Symbol('BLOCKCHAIN_GATEWAY');
+export const NOTIFICATION_GATEWAY = Symbol('NOTIFICATION_GATEWAY');
