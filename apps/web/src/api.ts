@@ -19,7 +19,8 @@ export type EvidenceKind = 'CUSTOMER_PRE_SHIPMENT' | 'STAFF_UNBOXING' | 'DISPUTE
 export type ShipmentDirection = 'TO_SHOP' | 'RETURN_TO_CUSTOMER';
 export type ShipmentStatus = 'PENDING' | 'IN_TRANSIT' | 'DELIVERED' | 'RETURNING';
 export type LoanStatus = 'OFFERED' | 'ACTIVE' | 'REPAID' | 'DEFAULTED' | 'LIQUIDATED';
-export type ListingStatus = 'ACTIVE' | 'SOLD' | 'CANCELLED';
+export type ListingStatus = 'ACTIVE' | 'SOLD' | 'CANCELLED' | 'RESERVED';
+export type LayawayStatus = 'ACTIVE' | 'COMPLETED' | 'FORFEITED';
 export type DisputeStatus = 'OPEN' | 'RESOLVED';
 
 // --- Models ---
@@ -106,6 +107,48 @@ export interface Layaway {
   totalPrice: number;
   amountPaid: number;
   deadline: string;
+  status: LayawayStatus;
+  monthsDuration?: number;
+  installmentAmount?: number;
+  downPayment?: number;
+  paidInstallments?: number;
+  amountPaidWei?: string;
+  downPaymentWei?: string;
+}
+
+export interface FractionalAsset {
+  assetId: string;
+  originalOwner: string;
+  totalShares: number;
+  availableShares: number;
+  pricePerShare: number;
+  status: 'ACTIVE' | 'SOLD_OUT' | 'REDEEMED';
+}
+
+export interface FractionalPosition {
+  id: string;
+  assetId: string;
+  holderId: string;
+  shares: number;
+  totalShares: number;
+}
+
+export interface FractionalizeAssetDto {
+  assetId: string;
+  totalShares: number;
+  targetPrice: number;
+  txHash?: string;
+}
+
+export interface BuyFractionsDto {
+  assetId: string;
+  sharesToBuy: number;
+  txHash?: string;
+}
+
+export interface RedeemAssetDto {
+  assetId: string;
+  txHash?: string;
 }
 
 export interface Dispute {
@@ -134,12 +177,29 @@ export interface PawnDashboard {
   listings: Listing[];
   disputes: Dispute[];
   auditEvents: AuditEvent[];
+  layaways: Layaway[];
   protocolFeesCollected: number;
+}
+
+export interface BlockchainConfig {
+  mode: 'mock' | 'anvil';
+  chainId?: number;
+  pawnProtocolAddress?: string;
+  paymentTokenAddress?: string;
+  assetTokenAddress?: string;
+  fractionTokenAddress?: string;
+  isDeploymentArtifactLoaded: boolean;
+}
+
+export interface BlockchainHealth {
+  mode: 'mock' | 'anvil';
+  healthy: boolean;
+  reason?: string;
 }
 
 // --- Request DTOs ---
 export interface CreateAssetDto {
-  ownerId: string;
+  ownerId?: string;
   title: string;
   category: string;
   description: string;
@@ -148,7 +208,7 @@ export interface CreateAssetDto {
 
 export interface UploadEvidenceDto {
   assetId: string;
-  uploadedBy: string;
+  uploadedBy?: string;
   kind: EvidenceKind;
   fileName: string;
   bytesBase64: string;
@@ -163,7 +223,7 @@ export interface CreateShipmentDto {
 
 export interface CreateAppraisalDto {
   assetId: string;
-  appraiserId: string;
+  appraiserId?: string;
   estimatedValue: number;
   ltvBps: number;
   interestAprBps: number;
@@ -179,6 +239,7 @@ export interface CreateLoanOfferDto {
 
 export interface AcceptLoanDto {
   borrowerWallet: string;
+  txHash?: string;
 }
 
 export interface RecordRepaymentDto {
@@ -189,41 +250,88 @@ export interface RecordRepaymentDto {
 
 export interface CreateListingDto {
   assetId: string;
-  sellerId: string;
+  sellerId?: string;
   price: number;
   isProtocolOwned: boolean;
+  txHash?: string;
 }
 
 export interface CreateLayawayDto {
   listingId: string;
-  buyerId: string;
+  buyerId?: string;
   downPayment: number;
   monthsDuration: number;
+  txHash?: string;
+}
+
+export interface PayLayawayDto {
+  amount?: number;
+  txHash?: string;
+}
+
+export interface WalletAction {
+  to: string;
+  calldata: string;
+  description?: string;
+}
+
+export interface WalletExecutionResponse {
+  status: string;
+  actions: WalletAction[];
+}
+
+export interface LayawayPaymentResponse extends WalletExecutionResponse {
+  nextInstallmentAmountWei?: string;
+  nextInstallmentAmountDisplay?: string;
 }
 
 // --- HTTP Client Helpers ---
-export async function postJson<TResponse, TBody extends Record<string, unknown> | unknown>(path: string, body: TBody): Promise<TResponse> {
+let authToken: string | null = null;
+
+export const setAuthToken = (token: string | null) => {
+  authToken = token;
+};
+
+export async function postJson<TResponse, TBody extends Record<string, unknown> | unknown>(
+  path: string,
+  body: TBody
+): Promise<TResponse> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (authToken) {
+    headers['Authorization'] = `Bearer ${authToken}`;
+  }
   const response = await fetch(`${API_BASE_URL}${path}`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers,
     body: JSON.stringify(body)
   });
 
   if (!response.ok) {
-    const errorText = await response.text().catch(() => '');
-    throw new Error(`Request failed with ${response.status}: ${errorText || response.statusText}`);
+    const errorText = await response.text();
+    let errorMessage = `Server error ${response.status}`;
+    try {
+      const parsed = JSON.parse(errorText);
+      errorMessage = parsed.message || errorMessage;
+    } catch {
+      // Not JSON
+    }
+    throw new Error(errorMessage);
   }
 
   return response.json() as Promise<TResponse>;
 }
 
 export async function getJson<TResponse>(path: string): Promise<TResponse> {
-  const response = await fetch(`${API_BASE_URL}${path}`);
-  if (!response.ok) {
-    const errorText = await response.text().catch(() => '');
-    throw new Error(`Request failed with ${response.status}: ${errorText || response.statusText}`);
+  const headers: Record<string, string> = {};
+  if (authToken) {
+    headers['Authorization'] = `Bearer ${authToken}`;
   }
-
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    headers
+  });
+  if (!response.ok) {
+    throw new Error(`Server error ${response.status}`);
+  }
   return response.json() as Promise<TResponse>;
 }
 
@@ -244,11 +352,21 @@ export const api = {
   createShipment: (dto: CreateShipmentDto) => postJson<Shipment, CreateShipmentDto>('/shipments', dto),
   createAppraisal: (dto: CreateAppraisalDto) => postJson<Appraisal, CreateAppraisalDto>('/appraisals', dto),
   createLoanOffer: (dto: CreateLoanOfferDto) => postJson<Loan, CreateLoanOfferDto>('/loans', dto),
-  acceptLoan: (loanId: string, dto: AcceptLoanDto) => postJson<Loan, AcceptLoanDto>(`/loans/${loanId}/accept`, dto),
+  acceptLoan: (loanId: string, dto: AcceptLoanDto) => postJson<Loan | WalletExecutionResponse, AcceptLoanDto>(`/loans/${loanId}/accept`, dto),
   recordRepayment: (dto: RecordRepaymentDto) => postJson<Repayment, RecordRepaymentDto>('/repayments', dto),
-  createListing: (dto: CreateListingDto) => postJson<Listing, CreateListingDto>('/marketplace/listings', dto),
-  createLayaway: (dto: CreateLayawayDto) => postJson<Layaway, CreateLayawayDto>('/layaways', dto),
-  demoLogin: (role: 'CUSTOMER' | 'STAFF' | 'ADMIN') => postJson<DemoSession, { role: string }>('/auth/demo-login', { role })
+  createListing: (dto: CreateListingDto) => postJson<Listing | WalletExecutionResponse, CreateListingDto>('/marketplace/listings', dto),
+  createLayaway: (dto: CreateLayawayDto) => postJson<Layaway | WalletExecutionResponse, CreateLayawayDto>('/layaways', dto),
+  payLayaway: (layawayId: string, dto: PayLayawayDto) => postJson<Layaway | LayawayPaymentResponse, PayLayawayDto>(`/layaways/${layawayId}/pay`, dto),
+  demoLogin: async (role: 'CUSTOMER' | 'STAFF' | 'ADMIN', userId?: string) => {
+    const session = await postJson<DemoSession, { role: string; userId?: string }>('/auth/demo-login', { role, userId });
+    setAuthToken(session.token);
+    return session;
+  },
+  fetchBlockchainConfig: () => getJson<BlockchainConfig>('/blockchain/config'),
+  fetchBlockchainHealth: () => getJson<BlockchainHealth>('/blockchain/health'),
+  fractionalizeAsset: (dto: FractionalizeAssetDto) => postJson<FractionalAsset | WalletExecutionResponse, FractionalizeAssetDto>('/fractions/fractionalize', dto),
+  buyFractions: (dto: BuyFractionsDto) => postJson<FractionalAsset | WalletExecutionResponse, BuyFractionsDto>('/fractions/buy', dto),
+  redeemAsset: (dto: RedeemAssetDto) => postJson<FractionalAsset | WalletExecutionResponse, RedeemAssetDto>('/fractions/redeem', dto),
+  fetchFractionalAssets: () => getJson<FractionalAsset[]>('/fractions/assets'),
+  fetchFractionalPositions: (userId: string) => getJson<FractionalPosition[]>(`/fractions/positions/${userId}`)
 };
-
-

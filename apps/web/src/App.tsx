@@ -27,7 +27,8 @@ import Flashbar from '@cloudscape-design/components/flashbar';
 import FileUpload from '@cloudscape-design/components/file-upload';
 
 import { api } from './api';
-import type { Asset, Listing, PawnDashboard, AssetStatus, DemoSession } from './api';
+import type { Asset, Listing, Layaway, PawnDashboard, AssetStatus, DemoSession, BlockchainConfig, BlockchainHealth, FractionalAsset, FractionalPosition } from './api';
+import { useAccount, useSendTransaction, useWriteContract, usePublicClient } from 'wagmi';
 import { workflowSteps } from './mockData';
 
 type AppProps = {
@@ -49,9 +50,10 @@ const roleLabels: Record<DemoSession['role'], string> = {
 };
 
 const roleSelectOptions = [
-  { label: 'Customer', value: 'CUSTOMER' },
-  { label: 'Validator', value: 'STAFF' },
-  { label: 'Admin', value: 'ADMIN' }
+  { label: 'Demo Customer Seller', value: 'customer-1' },
+  { label: 'Demo Customer Buyer', value: 'customer-2' },
+  { label: 'Demo Staff / Validator', value: 'STAFF' },
+  { label: 'Demo Admin', value: 'ADMIN' }
 ];
 
 const workspaceHomeHref: Record<DemoSession['role'], string> = {
@@ -65,6 +67,7 @@ const pageLabelMap: Record<string, string> = {
   '#new-pawn': 'New Pawn Request',
   '#my-assets': 'My Assets and Loans',
   '#marketplace': 'Marketplace',
+  '#fractions': 'Fractions',
   '#evidence': 'Evidence and Shipments',
   '#work-queue': 'Work Queue',
   '#intake-evidence': 'Intake Evidence',
@@ -98,6 +101,8 @@ const getStatusIndicator = (status: AssetStatus) => {
       return <StatusIndicator type="stopped">Returned</StatusIndicator>;
     case 'LISTED':
       return <StatusIndicator type="success">Listed</StatusIndicator>;
+    case 'FRACTIONALIZED':
+      return <StatusIndicator type="success">Fractionalized</StatusIndicator>;
     case 'DISPUTED':
       return <StatusIndicator type="error">Disputed</StatusIndicator>;
     default:
@@ -110,9 +115,16 @@ const formatId = (id: string) => {
 };
 
 export default function App({ walletButton }: AppProps) {
+  const { address: connectedAddress, isConnected } = useAccount();
+  const { sendTransactionAsync } = useSendTransaction();
+  const { writeContractAsync } = useWriteContract();
+  const publicClient = usePublicClient();
+
   const [session, setSession] = useState<DemoSession | null>(null);
   const [dashboard, setDashboard] = useState<PawnDashboard | null>(null);
   const [marketplace, setMarketplace] = useState<Listing[]>([]);
+  const [blockchainConfig, setBlockchainConfig] = useState<BlockchainConfig | null>(null);
+  const [blockchainHealth, setBlockchainHealth] = useState<BlockchainHealth | null>(null);
   const [loading, setLoading] = useState(true);
 
   // Layout navigation states
@@ -194,6 +206,377 @@ export default function App({ walletButton }: AppProps) {
   const [listingAssetId, setListingAssetId] = useState<string | null>(null);
   const [listPrice, setListPrice] = useState('');
 
+  // Fractionalization State & Handlers
+  const [fractionalAssets, setFractionalAssets] = useState<FractionalAsset[]>([]);
+  const [fractionalPositions, setFractionalPositions] = useState<FractionalPosition[]>([]);
+  const [fractionalizeAssetId, setFractionalizeAssetId] = useState<string | null>(null);
+  const [fractionalizeTotalShares, setFractionalizeTotalShares] = useState('100');
+  const [fractionalizeTargetPrice, setFractionalizeTargetPrice] = useState('');
+  const [isFractionalizeModalVisible, setIsFractionalizeModalVisible] = useState(false);
+
+  const [selectedFracAsset, setSelectedFracAsset] = useState<FractionalAsset | null>(null);
+  const [buySharesCount, setBuySharesCount] = useState('1');
+  const [isBuyFractionsModalVisible, setIsBuyFractionsModalVisible] = useState(false);
+
+  const onSubmitFractionalize = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!session || !fractionalizeAssetId) return;
+
+    const totalShares = parseInt(fractionalizeTotalShares, 10);
+    const targetPrice = parseFloat(fractionalizeTargetPrice);
+
+    if (isNaN(totalShares) || totalShares <= 0) {
+      addNotification('error', 'Total shares must be a positive integer');
+      return;
+    }
+    if (isNaN(targetPrice) || targetPrice <= 0) {
+      addNotification('error', 'Target price must be a positive number');
+      return;
+    }
+    if (targetPrice % totalShares !== 0) {
+      addNotification('error', 'Target price must be divisible by total shares');
+      return;
+    }
+
+    if (blockchainConfig?.mode === 'anvil') {
+      if (!isConnected || !connectedAddress) {
+        addNotification('error', 'Please connect your Web3 wallet (MetaMask) using the Connect button first.');
+        return;
+      }
+      if (connectedAddress.toLowerCase() !== session.walletAddress?.toLowerCase()) {
+        addNotification('error', `Connected wallet does not match active demo session wallet. Please switch accounts in MetaMask.`);
+        return;
+      }
+      if (!publicClient) {
+        addNotification('error', 'Public client not initialized. Cannot wait for transaction receipts.');
+        return;
+      }
+    }
+
+    setActionLoadingId(fractionalizeAssetId);
+    setIsFractionalizeModalVisible(false);
+
+    try {
+      if (blockchainConfig?.mode === 'anvil') {
+        const response = await api.fractionalizeAsset({
+          assetId: fractionalizeAssetId,
+          totalShares,
+          targetPrice
+        });
+
+        if (response && 'status' in response && response.status === 'AWAITING_WALLET_EXECUTION') {
+          const { actions } = response;
+          if (!actions || actions.length < 2) {
+            throw new Error('Invalid actions payload received from server');
+          }
+
+          addNotification('info', 'Please sign the ERC721 Approve transaction in your wallet...');
+          const approveHash = await sendTransactionAsync({
+            to: actions[0].to as `0x${string}`,
+            data: actions[0].calldata as `0x${string}`
+          });
+          addNotification('info', `Approval transaction submitted! waiting for confirmation (Tx: ${approveHash.slice(0, 10)}...)...`);
+          await publicClient!.waitForTransactionReceipt({ hash: approveHash });
+          addNotification('success', 'Approval confirmed! Please sign the Fractionalize transaction in your wallet...');
+
+          const fracHash = await sendTransactionAsync({
+            to: actions[1].to as `0x${string}`,
+            data: actions[1].calldata as `0x${string}`
+          });
+          addNotification('info', `Fractionalization submitted! waiting for confirmation (Tx: ${fracHash.slice(0, 10)}...)...`);
+          await publicClient!.waitForTransactionReceipt({ hash: fracHash });
+          addNotification('success', 'Fractionalization confirmed! Completing with server...');
+
+          await api.fractionalizeAsset({
+            assetId: fractionalizeAssetId,
+            totalShares,
+            targetPrice,
+            txHash: fracHash
+          });
+        }
+      } else {
+        await api.fractionalizeAsset({
+          assetId: fractionalizeAssetId,
+          totalShares,
+          targetPrice
+        });
+      }
+      addNotification('success', 'Asset fractionalized successfully!');
+      await loadData();
+    } catch (err: any) {
+      addNotification('error', err.message || 'Failed to fractionalize asset');
+    } finally {
+      setActionLoadingId(null);
+    }
+  };
+
+  const onSubmitBuyFractions = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!session || !selectedFracAsset) return;
+
+    const sharesToBuy = parseInt(buySharesCount, 10);
+    if (isNaN(sharesToBuy) || sharesToBuy <= 0) {
+      addNotification('error', 'Shares count must be a positive integer');
+      return;
+    }
+    if (sharesToBuy > selectedFracAsset.availableShares) {
+      addNotification('error', 'Cannot buy more than available shares');
+      return;
+    }
+
+    if (blockchainConfig?.mode === 'anvil') {
+      if (!isConnected || !connectedAddress) {
+        addNotification('error', 'Please connect your Web3 wallet (MetaMask) using the Connect button first.');
+        return;
+      }
+      if (connectedAddress.toLowerCase() !== session.walletAddress?.toLowerCase()) {
+        addNotification('error', `Connected wallet does not match active demo session wallet. Please switch accounts in MetaMask.`);
+        return;
+      }
+      if (!publicClient) {
+        addNotification('error', 'Public client not initialized. Cannot wait for transaction receipts.');
+        return;
+      }
+    }
+
+    setActionLoadingId(selectedFracAsset.assetId);
+    setIsBuyFractionsModalVisible(false);
+
+    try {
+      if (blockchainConfig?.mode === 'anvil') {
+        const response = await api.buyFractions({
+          assetId: selectedFracAsset.assetId,
+          sharesToBuy
+        });
+
+        if (response && 'status' in response && response.status === 'AWAITING_WALLET_EXECUTION') {
+          const { actions } = response;
+          if (!actions || actions.length < 2) {
+            throw new Error('Invalid actions payload received from server');
+          }
+
+          addNotification('info', 'Please sign the ERC20 Approve transaction in your wallet...');
+          const approveHash = await sendTransactionAsync({
+            to: actions[0].to as `0x${string}`,
+            data: actions[0].calldata as `0x${string}`
+          });
+          addNotification('info', `Approval transaction submitted! waiting for confirmation (Tx: ${approveHash.slice(0, 10)}...)...`);
+          await publicClient!.waitForTransactionReceipt({ hash: approveHash });
+          addNotification('success', 'Approval confirmed! Please sign the Buy Fractions transaction in your wallet...');
+
+          const buyHash = await sendTransactionAsync({
+            to: actions[1].to as `0x${string}`,
+            data: actions[1].calldata as `0x${string}`
+          });
+          addNotification('info', `Buy Fractions transaction submitted! waiting for confirmation (Tx: ${buyHash.slice(0, 10)}...)...`);
+          await publicClient!.waitForTransactionReceipt({ hash: buyHash });
+          addNotification('success', 'Buy Fractions transaction confirmed! Completing with server...');
+
+          await api.buyFractions({
+            assetId: selectedFracAsset.assetId,
+            sharesToBuy,
+            txHash: buyHash
+          });
+        }
+      } else {
+        await api.buyFractions({
+          assetId: selectedFracAsset.assetId,
+          sharesToBuy
+        });
+      }
+      addNotification('success', 'Fractions purchased successfully!');
+      await loadData();
+    } catch (err: any) {
+      addNotification('error', err.message || 'Failed to buy fractions');
+    } finally {
+      setActionLoadingId(null);
+    }
+  };
+
+  const handleRedeemAsset = async (assetId: string) => {
+    if (!session) return;
+
+    if (blockchainConfig?.mode === 'anvil') {
+      if (!isConnected || !connectedAddress) {
+        addNotification('error', 'Please connect your Web3 wallet (MetaMask) using the Connect button first.');
+        return;
+      }
+      if (connectedAddress.toLowerCase() !== session.walletAddress?.toLowerCase()) {
+        addNotification('error', `Connected wallet does not match active demo session wallet. Please switch accounts in MetaMask.`);
+        return;
+      }
+      if (!publicClient) {
+        addNotification('error', 'Public client not initialized. Cannot wait for transaction receipts.');
+        return;
+      }
+    }
+
+    setActionLoadingId(assetId);
+
+    try {
+      if (blockchainConfig?.mode === 'anvil') {
+        const response = await api.redeemAsset({
+          assetId
+        });
+
+        if (response && 'status' in response && response.status === 'AWAITING_WALLET_EXECUTION') {
+          const { actions } = response;
+          if (!actions || actions.length < 1) {
+            throw new Error('Invalid actions payload received from server');
+          }
+
+          addNotification('info', 'Please sign the Redeem Asset transaction in your wallet...');
+          const redeemHash = await sendTransactionAsync({
+            to: actions[0].to as `0x${string}`,
+            data: actions[0].calldata as `0x${string}`
+          });
+          addNotification('info', `Redeem transaction submitted! waiting for confirmation (Tx: ${redeemHash.slice(0, 10)}...)...`);
+          await publicClient!.waitForTransactionReceipt({ hash: redeemHash });
+          addNotification('success', 'Redeem transaction confirmed! Completing with server...');
+
+          await api.redeemAsset({
+            assetId,
+            txHash: redeemHash
+          });
+        }
+      } else {
+        await api.redeemAsset({
+          assetId
+        });
+      }
+      addNotification('success', 'Asset redeemed successfully!');
+      await loadData();
+    } catch (err: any) {
+      addNotification('error', err.message || 'Failed to redeem asset');
+    } finally {
+      setActionLoadingId(null);
+    }
+  };
+
+  const renderFractionsPage = () => {
+    const customerAssets = (dashboard?.assets ?? []).filter((a) => a.ownerId === session?.userId);
+    const eligibleAssets = customerAssets.filter((a) => ['RECEIVED', 'RETURNED'].includes(a.status));
+
+    const getAssetDetails = (assetId: string) => {
+      const asset = dashboard?.assets.find(a => a.id === assetId);
+      return asset ? `${asset.title} (${asset.category})` : assetId;
+    };
+
+    return (
+      <SpaceBetween size="l">
+        <Container variant="stacked" header={<Header variant="h2">Eligible Assets for Fractionalization</Header>}>
+          <div className="demo-table-wrapper">
+            <Table
+              variant="embedded"
+              contentDensity="compact"
+              columnDefinitions={[
+                { id: 'id', header: 'Asset ID', cell: (item) => <code>{item.id}</code>, minWidth: 120 },
+                { id: 'title', header: 'Asset Title', cell: (item) => item.title, minWidth: 220 },
+                { id: 'status', header: 'Status', cell: (item) => getStatusIndicator(item.status), minWidth: 150 },
+                { id: 'value', header: 'Declared Value', cell: (item) => <span className="numeric-cell">{`${item.declaredValue} USDC`}</span>, minWidth: 140 },
+                {
+                  id: 'action',
+                  header: 'Action',
+                  cell: (item) => (
+                    <Button
+                      variant="normal"
+                      loading={actionLoadingId === item.id}
+                      onClick={() => {
+                        setFractionalizeAssetId(item.id);
+                        setIsFractionalizeModalVisible(true);
+                      }}
+                    >
+                      Fractionalize
+                    </Button>
+                  ),
+                  minWidth: 140
+                }
+              ]}
+              items={eligibleAssets}
+              empty="No eligible assets in custody to fractionalize."
+            />
+          </div>
+        </Container>
+
+        <Container variant="stacked" header={<Header variant="h2">Active Fractional Pools</Header>}>
+          <div className="demo-table-wrapper">
+            <Table
+              variant="embedded"
+              contentDensity="compact"
+              columnDefinitions={[
+                { id: 'id', header: 'Asset ID', cell: (item) => <code>{item.assetId}</code>, minWidth: 120 },
+                { id: 'asset', header: 'Asset Title', cell: (item) => getAssetDetails(item.assetId), minWidth: 220 },
+                { id: 'totalShares', header: 'Total Shares', cell: (item) => item.totalShares, minWidth: 120 },
+                { id: 'available', header: 'Available Shares', cell: (item) => item.availableShares, minWidth: 120 },
+                { id: 'price', header: 'Price Per Share', cell: (item) => <span className="numeric-cell">{`${item.pricePerShare} USDC`}</span>, minWidth: 140 },
+                { id: 'status', header: 'Status', cell: (item) => <Badge color={item.status === 'ACTIVE' ? 'green' : 'blue'}>{item.status}</Badge>, minWidth: 120 },
+                {
+                  id: 'action',
+                  header: 'Action',
+                  cell: (item) => (
+                    <Button
+                      variant={item.status === 'ACTIVE' && item.originalOwner !== session?.userId ? 'primary' : 'normal'}
+                      loading={actionLoadingId === item.assetId}
+                      disabled={item.status !== 'ACTIVE' || item.originalOwner === session?.userId}
+                      onClick={() => {
+                        setSelectedFracAsset(item);
+                        setBuySharesCount('1');
+                        setIsBuyFractionsModalVisible(true);
+                      }}
+                    >
+                      Buy Fractions
+                    </Button>
+                  ),
+                  minWidth: 140
+                }
+              ]}
+              items={fractionalAssets}
+              empty="No fractional pools currently active."
+            />
+          </div>
+        </Container>
+
+        <Container variant="stacked" header={<Header variant="h2">My Fraction Holdings</Header>}>
+          <div className="demo-table-wrapper">
+            <Table
+              variant="embedded"
+              contentDensity="compact"
+              columnDefinitions={[
+                { id: 'id', header: 'Asset ID', cell: (item) => <code>{item.assetId}</code>, minWidth: 120 },
+                { id: 'asset', header: 'Asset Title', cell: (item) => getAssetDetails(item.assetId), minWidth: 220 },
+                { id: 'owned', header: 'Owned Shares', cell: (item) => item.shares, minWidth: 120 },
+                { id: 'total', header: 'Total Shares', cell: (item) => item.totalShares, minWidth: 120 },
+                { id: 'percent', header: 'Ownership', cell: (item) => `${((item.shares / item.totalShares) * 100).toFixed(1)}%`, minWidth: 120 },
+                {
+                  id: 'action',
+                  header: 'Action',
+                  cell: (item) => {
+                    const isFullyOwned = item.shares === item.totalShares;
+                    const asset = dashboard?.assets.find(a => a.id === item.assetId);
+                    const isRedeemed = asset?.status === 'RETURNING' || asset?.status === 'RETURNED';
+                    return (
+                      <Button
+                        variant={isFullyOwned && !isRedeemed ? 'primary' : 'normal'}
+                        loading={actionLoadingId === item.assetId}
+                        disabled={!isFullyOwned || isRedeemed}
+                        onClick={() => handleRedeemAsset(item.assetId)}
+                      >
+                        Redeem Asset
+                      </Button>
+                    );
+                  },
+                  minWidth: 140
+                }
+              ]}
+              items={fractionalPositions}
+              empty="You do not hold any fractional shares."
+            />
+          </div>
+        </Container>
+      </SpaceBetween>
+    );
+  };
+
   const addNotification = (type: 'success' | 'error' | 'info' | 'warning', content: string) => {
     setNotifications([
       {
@@ -206,15 +589,29 @@ export default function App({ walletButton }: AppProps) {
     ]);
   };
 
-  const loadData = async () => {
+  const loadData = async (currentSession?: DemoSession | null) => {
     setLoading(true);
     try {
-      const [dash, market] = await Promise.all([
+      const activeSession = currentSession !== undefined ? currentSession : session;
+      const [dash, market, config, health, fracAssets, fracPositions] = await Promise.all([
         api.fetchDashboard(),
-        api.fetchMarketplace()
+        api.fetchMarketplace(),
+        api.fetchBlockchainConfig().catch(() => null),
+        api.fetchBlockchainHealth().catch(() => null),
+        api.fetchFractionalAssets().catch(() => []),
+        activeSession ? api.fetchFractionalPositions(activeSession.userId).catch(() => []) : Promise.resolve([])
       ]);
       setDashboard(dash);
       setMarketplace(market);
+      setFractionalAssets(fracAssets);
+      setFractionalPositions(fracPositions);
+
+      if (config) {
+        setBlockchainConfig(config);
+      }
+      if (health) {
+        setBlockchainHealth(health);
+      }
 
       // Keep selected asset sync'd with fresh data
       if (selectedAsset) {
@@ -233,31 +630,50 @@ export default function App({ walletButton }: AppProps) {
 
   useEffect(() => {
     const initSessionAndLoad = async () => {
+      let defaultSession = null;
       try {
-        const defaultSession = await api.demoLogin('CUSTOMER');
+        defaultSession = await api.demoLogin('CUSTOMER');
         setSession(defaultSession);
         setActiveHref('#overview');
       } catch (err) {
         console.error('Failed to initialize demo session', err);
       }
-      loadData();
+      loadData(defaultSession);
     };
     initSessionAndLoad();
   }, []);
 
   useEffect(() => {
-    const assets = dashboard?.assets ?? [];
+    const assets = (dashboard?.assets ?? []).filter((a) => a.ownerId === session?.userId);
     if (activeHref === '#my-assets' && !selectedAsset && assets.length > 0) {
       setSelectedAsset(assets[0]);
     }
-  }, [activeHref, selectedAsset, dashboard]);
+  }, [activeHref, selectedAsset, dashboard, session]);
 
-  const handleRoleChange = async (role: 'CUSTOMER' | 'STAFF' | 'ADMIN') => {
+  const handleRoleChange = async (selectedValue: string) => {
     setNotifications([]); // Clear notifications on role switch!
     setSearchQuery('');  // Clear search input on role switch!
     try {
-      const newSession = await api.demoLogin(role);
+      let role: 'CUSTOMER' | 'STAFF' | 'ADMIN';
+      let userId: string | undefined;
+
+      if (selectedValue === 'customer-1') {
+        role = 'CUSTOMER';
+        userId = 'customer-1';
+      } else if (selectedValue === 'customer-2') {
+        role = 'CUSTOMER';
+        userId = 'customer-2';
+      } else if (selectedValue === 'STAFF') {
+        role = 'STAFF';
+      } else if (selectedValue === 'ADMIN') {
+        role = 'ADMIN';
+      } else {
+        throw new Error(`Invalid role option selected: ${selectedValue}`);
+      }
+
+      const newSession = await api.demoLogin(role, userId);
       setSession(newSession);
+      await loadData(newSession);
 
       // Set default sidebar selection for the selected role
       if (role === 'CUSTOMER') {
@@ -297,7 +713,6 @@ export default function App({ walletButton }: AppProps) {
     try {
       // 1. Submit Asset Details
       const newAsset = await api.createAsset({
-        ownerId: session.userId,
         title: pawnTitle,
         category: pawnCategory,
         description: pawnDescription,
@@ -311,7 +726,6 @@ export default function App({ walletButton }: AppProps) {
             const base64 = await fileToBase64(file);
             await api.uploadEvidence({
               assetId: newAsset.id,
-              uploadedBy: session.userId,
               kind: 'CUSTOMER_PRE_SHIPMENT',
               fileName: file.name,
               bytesBase64: base64
@@ -320,7 +734,6 @@ export default function App({ walletButton }: AppProps) {
             console.error('File conversion failed, falling back to mock evidence payload', err);
             await api.uploadEvidence({
               assetId: newAsset.id,
-              uploadedBy: session.userId,
               kind: 'CUSTOMER_PRE_SHIPMENT',
               fileName: file.name,
               bytesBase64: 'bW9jay1maWxlLWNvbnRlbnQ='
@@ -331,7 +744,6 @@ export default function App({ walletButton }: AppProps) {
         // Fallback mock evidence upload if no file is chosen
         await api.uploadEvidence({
           assetId: newAsset.id,
-          uploadedBy: session.userId,
           kind: 'CUSTOMER_PRE_SHIPMENT',
           fileName: 'pre_shipment_receipt.jpg',
           bytesBase64: 'bW9jay1maWxlLWNvbnRlbnQ='
@@ -339,7 +751,7 @@ export default function App({ walletButton }: AppProps) {
       }
 
       addNotification('success', `Asset "${pawnTitle}" submitted successfully!`);
-      
+
       // Reset pawn form fields
       setPawnTitle('');
       setPawnCategory('');
@@ -347,7 +759,7 @@ export default function App({ walletButton }: AppProps) {
       setPawnRequestedAmount('');
       setPawnDescription('');
       setSelectedFiles([]);
-      
+
       await loadData();
     } catch (err: any) {
       addNotification('error', err.message || 'Asset submission failed');
@@ -383,11 +795,62 @@ export default function App({ walletButton }: AppProps) {
       addNotification('error', 'Session wallet address is required');
       return;
     }
+
+    if (blockchainConfig?.mode === 'anvil') {
+      if (!isConnected || !connectedAddress) {
+        addNotification('error', 'Please connect your Web3 wallet (MetaMask) using the Connect button first.');
+        return;
+      }
+      if (connectedAddress.toLowerCase() !== session.walletAddress.toLowerCase()) {
+        addNotification('error', `Connected wallet (${connectedAddress.slice(0, 6)}...) does not match your active demo session wallet (${session.walletAddress.slice(0, 6)}...). Please switch accounts in MetaMask.`);
+        return;
+      }
+      if (!publicClient) {
+        addNotification('error', 'Public client not initialized. Cannot wait for transaction receipts.');
+        return;
+      }
+    }
+
     setActionLoadingId(loanId);
     try {
-      await api.acceptLoan(loanId, {
-        borrowerWallet: session.walletAddress
-      });
+      if (blockchainConfig?.mode === 'anvil') {
+        const response = await api.acceptLoan(loanId, {
+          borrowerWallet: connectedAddress as string
+        });
+
+        if (response && 'status' in response && response.status === 'AWAITING_WALLET_EXECUTION') {
+          const { actions } = response;
+          if (!actions || actions.length < 2) {
+            throw new Error('Invalid actions payload received from server');
+          }
+
+          addNotification('info', 'Please sign the ERC721 Approve transaction in your wallet...');
+          const approveHash = await sendTransactionAsync({
+            to: actions[0].to as `0x${string}`,
+            data: actions[0].calldata as `0x${string}`
+          });
+          addNotification('info', `Approval transaction submitted! waiting for confirmation (Tx: ${approveHash.slice(0, 10)}...)...`);
+          await publicClient!.waitForTransactionReceipt({ hash: approveHash });
+          addNotification('success', 'Approval confirmed! Please sign the Create Loan transaction in your wallet...');
+
+          const loanHash = await sendTransactionAsync({
+            to: actions[1].to as `0x${string}`,
+            data: actions[1].calldata as `0x${string}`
+          });
+          addNotification('info', `Loan creation submitted! waiting for confirmation (Tx: ${loanHash.slice(0, 10)}...)...`);
+          await publicClient!.waitForTransactionReceipt({ hash: loanHash });
+          addNotification('success', 'Loan creation confirmed! Completing with server...');
+
+          await api.acceptLoan(loanId, {
+            borrowerWallet: connectedAddress as string,
+            txHash: loanHash
+          });
+        }
+      } else {
+        await api.acceptLoan(loanId, {
+          borrowerWallet: session.walletAddress
+        });
+      }
       addNotification('success', 'Loan accepted! principal amount disbursed.');
       await loadData();
     } catch (err: any) {
@@ -402,6 +865,11 @@ export default function App({ walletButton }: AppProps) {
       addNotification('error', 'No active session found');
       return;
     }
+    const walletAddress = session.walletAddress;
+    if (!walletAddress) {
+      addNotification('error', 'Session wallet address is not set');
+      return;
+    }
     if (!selectedAsset) {
       addNotification('warning', 'Please select an asset with an active loan from the table first.');
       return;
@@ -412,12 +880,88 @@ export default function App({ walletButton }: AppProps) {
       return;
     }
 
+    const client = publicClient;
+    if (blockchainConfig?.mode === 'anvil') {
+      if (!isConnected || !connectedAddress) {
+        addNotification('error', 'Please connect your Web3 wallet (MetaMask) using the Connect button first.');
+        return;
+      }
+      if (connectedAddress.toLowerCase() !== walletAddress.toLowerCase()) {
+        addNotification('error', `Connected wallet (${connectedAddress.slice(0, 6)}...) does not match your active demo session wallet (${walletAddress.slice(0, 6)}...). Please switch accounts in MetaMask.`);
+        return;
+      }
+      if (!selectedAsset.tokenId) {
+        addNotification('error', `Selected asset ${selectedAsset.id} does not have a mapped token ID.`);
+        return;
+      }
+      if (!client) {
+        addNotification('error', 'Public client not initialized. Cannot wait for transaction receipts.');
+        return;
+      }
+    }
+
     setActionLoadingId(selectedAsset.id);
     try {
+      let txHash = '';
+      if (blockchainConfig?.mode === 'anvil') {
+        if (!client) {
+          throw new Error('Public client not initialized. Cannot wait for transaction receipts.');
+        }
+        const tokenId = parseInt(selectedAsset.tokenId!, 10);
+        const principalWei = BigInt(Math.floor(loan.principal)) * 10n**18n;
+        const approvalAmount = principalWei * 2n;
+
+        addNotification('info', 'Please sign the ERC20 Approve transaction for repayment...');
+        const approveHash = await writeContractAsync({
+          address: blockchainConfig.paymentTokenAddress as `0x${string}`,
+          abi: [
+            {
+              name: 'approve',
+              type: 'function',
+              stateMutability: 'nonpayable',
+              inputs: [
+                { name: 'spender', type: 'address' },
+                { name: 'amount', type: 'uint256' }
+              ],
+              outputs: [{ name: '', type: 'bool' }]
+            }
+          ],
+          functionName: 'approve',
+          args: [
+            blockchainConfig.pawnProtocolAddress as `0x${string}`,
+            approvalAmount
+          ]
+        });
+        addNotification('info', `ERC20 Approve submitted! waiting for confirmation (Tx: ${approveHash.slice(0, 10)}...)...`);
+        await client.waitForTransactionReceipt({ hash: approveHash });
+        addNotification('success', 'ERC20 Approve confirmed! Please sign the Repay Pawn transaction in your wallet...');
+
+        const repayHash = await writeContractAsync({
+          address: blockchainConfig.pawnProtocolAddress as `0x${string}`,
+          abi: [
+            {
+              name: 'repayPawn',
+              type: 'function',
+              stateMutability: 'nonpayable',
+              inputs: [{ name: 'assetId', type: 'uint256' }],
+              outputs: []
+            }
+          ],
+          functionName: 'repayPawn',
+          args: [BigInt(tokenId)]
+        });
+        addNotification('info', `Repayment transaction submitted! waiting for confirmation (Tx: ${repayHash.slice(0, 10)}...)...`);
+        await client.waitForTransactionReceipt({ hash: repayHash });
+        addNotification('success', 'Repayment confirmed! Completing with server...');
+        txHash = repayHash;
+      } else {
+        txHash = '0x' + Array.from({ length: 64 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
+      }
+
       await api.recordRepayment({
         loanId: loan.id,
         amount: loan.principal,
-        txHash: '0x' + Array.from({ length: 64 }, () => Math.floor(Math.random() * 16).toString(16)).join('')
+        txHash: txHash
       });
       addNotification('success', 'Loan fully repaid! Asset collateral released.');
       setSelectedAsset(null);
@@ -437,15 +981,72 @@ export default function App({ walletButton }: AppProps) {
 
   const onSubmitListing = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!session || !listingAssetId) return;
+    if (!session || !session.walletAddress || !listingAssetId) {
+      addNotification('error', 'Session wallet address and listing asset are required');
+      return;
+    }
+
+    if (blockchainConfig?.mode === 'anvil') {
+      if (!isConnected || !connectedAddress) {
+        addNotification('error', 'Please connect your Web3 wallet (MetaMask) using the Connect button first.');
+        return;
+      }
+      if (connectedAddress.toLowerCase() !== session.walletAddress.toLowerCase()) {
+        addNotification('error', `Connected wallet (${connectedAddress.slice(0, 6)}...) does not match your active demo session wallet (${session.walletAddress.slice(0, 6)}...). Please switch accounts in MetaMask.`);
+        return;
+      }
+      if (!publicClient) {
+        addNotification('error', 'Public client not initialized. Cannot wait for transaction receipts.');
+        return;
+      }
+    }
+
     setActionLoadingId(listingAssetId);
     try {
-      await api.createListing({
-        assetId: listingAssetId,
-        sellerId: session.userId,
-        price: Number(listPrice),
-        isProtocolOwned: false
-      });
+      if (blockchainConfig?.mode === 'anvil') {
+        const response = await api.createListing({
+          assetId: listingAssetId,
+          price: Number(listPrice),
+          isProtocolOwned: false
+        });
+
+        if (response && 'status' in response && response.status === 'AWAITING_WALLET_EXECUTION') {
+          const { actions } = response;
+          if (!actions || actions.length < 2) {
+            throw new Error('Invalid actions payload received from server');
+          }
+
+          addNotification('info', 'Please sign the NFT Approve transaction in your wallet...');
+          const approveHash = await sendTransactionAsync({
+            to: actions[0].to as `0x${string}`,
+            data: actions[0].calldata as `0x${string}`
+          });
+          addNotification('info', `Approval transaction submitted! waiting for confirmation (Tx: ${approveHash.slice(0, 10)}...)...`);
+          await publicClient!.waitForTransactionReceipt({ hash: approveHash });
+          addNotification('success', 'NFT approval confirmed! Please sign the Create Listing transaction in your wallet...');
+
+          const listingHash = await sendTransactionAsync({
+            to: actions[1].to as `0x${string}`,
+            data: actions[1].calldata as `0x${string}`
+          });
+          addNotification('info', `Listing creation submitted! waiting for confirmation (Tx: ${listingHash.slice(0, 10)}...)...`);
+          await publicClient!.waitForTransactionReceipt({ hash: listingHash });
+          addNotification('success', 'Listing confirmed! Completing with server...');
+
+          await api.createListing({
+            assetId: listingAssetId,
+            price: Number(listPrice),
+            isProtocolOwned: false,
+            txHash: listingHash
+          });
+        }
+      } else {
+        await api.createListing({
+          assetId: listingAssetId,
+          price: Number(listPrice),
+          isProtocolOwned: false
+        });
+      }
       addNotification('success', 'Asset successfully listed in the Marketplace!');
       setIsListModalVisible(false);
       await loadData();
@@ -465,7 +1066,6 @@ export default function App({ walletButton }: AppProps) {
     try {
       await api.uploadEvidence({
         assetId,
-        uploadedBy: session.userId,
         kind: 'STAFF_UNBOXING',
         fileName: 'unboxing_cam_4.mp4',
         bytesBase64: 'dW5ib3hpbmctdmlkZW8='
@@ -493,7 +1093,6 @@ export default function App({ walletButton }: AppProps) {
       // 1. Submit the appraisal
       await api.createAppraisal({
         assetId: appraisalAssetId,
-        appraiserId: session.userId,
         estimatedValue,
         ltvBps,
         interestAprBps: 500, // 5% APR
@@ -528,22 +1127,169 @@ export default function App({ walletButton }: AppProps) {
   };
 
   const handleBuy = async (listing: Listing) => {
-    if (!session) {
-      addNotification('error', 'No active session found');
+    if (!session || !session.walletAddress) {
+      addNotification('error', 'Session wallet address is required');
       return;
     }
+
+    if (blockchainConfig?.mode === 'anvil') {
+      if (!isConnected || !connectedAddress) {
+        addNotification('error', 'Please connect your Web3 wallet (MetaMask) using the Connect button first.');
+        return;
+      }
+      if (connectedAddress.toLowerCase() !== session.walletAddress.toLowerCase()) {
+        addNotification('error', `Connected wallet (${connectedAddress.slice(0, 6)}...) does not match your active demo session wallet (${session.walletAddress.slice(0, 6)}...). Please switch accounts in MetaMask.`);
+        return;
+      }
+      if (!publicClient) {
+        addNotification('error', 'Public client not initialized. Cannot wait for transaction receipts.');
+        return;
+      }
+    }
+
     setActionLoadingId(listing.id);
     try {
-      await api.createLayaway({
-        listingId: listing.id,
-        buyerId: session.userId,
-        downPayment: listing.price * 0.2, // 20% down
-        monthsDuration: 6
-      });
+      if (blockchainConfig?.mode === 'anvil') {
+        const response = await api.createLayaway({
+          listingId: listing.id,
+          downPayment: listing.price * 0.2, // 20% down
+          monthsDuration: 6
+        });
+
+        if (response && 'status' in response && response.status === 'AWAITING_WALLET_EXECUTION') {
+          const { actions } = response;
+          if (!actions || actions.length < 2) {
+            throw new Error('Invalid actions payload received from server');
+          }
+
+          addNotification('info', 'Please sign the ERC20 Approve transaction in your wallet...');
+          const approveHash = await sendTransactionAsync({
+            to: actions[0].to as `0x${string}`,
+            data: actions[0].calldata as `0x${string}`
+          });
+          addNotification('info', `ERC20 approval submitted! waiting for confirmation (Tx: ${approveHash.slice(0, 10)}...)...`);
+          await publicClient!.waitForTransactionReceipt({ hash: approveHash });
+          addNotification('success', 'ERC20 approval confirmed! Please sign the Start Layaway transaction in your wallet...');
+
+          const layawayHash = await sendTransactionAsync({
+            to: actions[1].to as `0x${string}`,
+            data: actions[1].calldata as `0x${string}`
+          });
+          addNotification('info', `Layaway initiation submitted! waiting for confirmation (Tx: ${layawayHash.slice(0, 10)}...)...`);
+          await publicClient!.waitForTransactionReceipt({ hash: layawayHash });
+          addNotification('success', 'Layaway confirmed! Completing with server...');
+
+          await api.createLayaway({
+            listingId: listing.id,
+            downPayment: listing.price * 0.2,
+            monthsDuration: 6,
+            txHash: layawayHash
+          });
+        }
+      } else {
+        await api.createLayaway({
+          listingId: listing.id,
+          downPayment: listing.price * 0.2, // 20% down
+          monthsDuration: 6
+        });
+      }
       addNotification('success', `Layaway initiated! 20% down payment processed.`);
       await loadData();
     } catch (err: any) {
       addNotification('error', err.message || 'Layaway failed');
+    } finally {
+      setActionLoadingId(null);
+    }
+  };
+
+  const handlePayInstallment = async (layaway: Layaway) => {
+    if (!session || !session.walletAddress) {
+      addNotification('error', 'Session wallet address is required');
+      return;
+    }
+
+    // Calculate next installment amount
+    const remaining = layaway.totalPrice - layaway.amountPaid;
+    const installment = layaway.installmentAmount ?? 0;
+    const nextAmount = (remaining <= installment || (remaining - installment) < installment)
+      ? remaining
+      : installment;
+
+    if (nextAmount <= 0) {
+      addNotification('error', 'No installment due — layaway may already be complete.');
+      return;
+    }
+
+    if (blockchainConfig?.mode === 'anvil') {
+      if (!isConnected || !connectedAddress) {
+        addNotification('error', 'Please connect your Web3 wallet (MetaMask) using the Connect button first.');
+        return;
+      }
+      if (connectedAddress.toLowerCase() !== session.walletAddress.toLowerCase()) {
+        addNotification('error', `Connected wallet (${connectedAddress.slice(0, 6)}...) does not match your active demo session wallet (${session.walletAddress.slice(0, 6)}...). Please switch accounts in MetaMask.`);
+        return;
+      }
+      if (!publicClient) {
+        addNotification('error', 'Public client not initialized. Cannot wait for transaction receipts.');
+        return;
+      }
+    }
+
+    setActionLoadingId(layaway.id);
+    try {
+      let finalLayaway: Layaway;
+      let displayAmount = nextAmount.toString();
+
+      if (blockchainConfig?.mode === 'anvil') {
+        const response = await api.payLayaway(layaway.id, {});
+
+        if (response && 'status' in response && response.status === 'AWAITING_WALLET_EXECUTION') {
+          const { actions, nextInstallmentAmountDisplay } = response as {
+            status: string;
+            actions: any[];
+            nextInstallmentAmountDisplay?: string;
+          };
+          if (!actions || actions.length < 2) {
+            throw new Error('Invalid actions payload received from server');
+          }
+
+          if (nextInstallmentAmountDisplay) {
+            displayAmount = nextInstallmentAmountDisplay;
+          }
+
+          addNotification('info', 'Please sign the ERC20 Approve transaction in your wallet...');
+          const approveHash = await sendTransactionAsync({
+            to: actions[0].to as `0x${string}`,
+            data: actions[0].calldata as `0x${string}`
+          });
+          addNotification('info', `ERC20 approval submitted! waiting for confirmation (Tx: ${approveHash.slice(0, 10)}...)...`);
+          await publicClient!.waitForTransactionReceipt({ hash: approveHash });
+          addNotification('success', 'ERC20 approval confirmed! Please sign the Pay Installment transaction in your wallet...');
+
+          const payHash = await sendTransactionAsync({
+            to: actions[1].to as `0x${string}`,
+            data: actions[1].calldata as `0x${string}`
+          });
+          addNotification('info', `Pay installment submitted! waiting for confirmation (Tx: ${payHash.slice(0, 10)}...)...`);
+          await publicClient!.waitForTransactionReceipt({ hash: payHash });
+          addNotification('success', 'Payment confirmed! Completing with server...');
+
+          finalLayaway = await api.payLayaway(layaway.id, { txHash: payHash }) as Layaway;
+        } else {
+          finalLayaway = response as Layaway;
+        }
+      } else {
+        finalLayaway = await api.payLayaway(layaway.id, { amount: nextAmount }) as Layaway;
+      }
+
+      const isCompleted = finalLayaway.status === 'COMPLETED';
+      addNotification('success', isCompleted
+        ? 'Final payment confirmed. Asset ownership transferred.'
+        : `Installment of ${displayAmount} USDC paid successfully.`
+      );
+      await loadData();
+    } catch (err: any) {
+      addNotification('error', err.message || 'Installment payment failed');
     } finally {
       setActionLoadingId(null);
     }
@@ -561,7 +1307,9 @@ export default function App({ walletButton }: AppProps) {
   const protocolFees = dashboard?.protocolFeesCollected ?? 0;
 
   // Next Actions for customer
-  const customerAssets = dashboard?.assets ?? [];
+  const customerAssets = (dashboard?.assets ?? []).filter(
+    (asset) => asset.ownerId === session?.userId
+  );
   const customerActiveLoans = dashboard?.loans.filter(
     (loan) => loan.borrowerId === session?.userId && loan.status === 'ACTIVE'
   ).length ?? 0;
@@ -648,7 +1396,7 @@ export default function App({ walletButton }: AppProps) {
     { label: 'Latest tracked asset', value: latestShipmentAsset ? latestShipmentAsset.title : 'No shipment activity' }
   ];
 
-  const shipmentRecords = (dashboard?.assets ?? []).flatMap((asset) => {
+  const shipmentRecords = customerAssets.flatMap((asset) => {
     const tracking = dashboard?.loans.find((loan) => loan.assetId === asset.id)?.contractTxHash;
     if (asset.status !== 'DRAFT' && asset.status !== 'AWAITING_SHIPMENT') {
       return [
@@ -695,6 +1443,7 @@ export default function App({ walletButton }: AppProps) {
           text: 'Records',
           items: [
             { type: 'link' as const, text: 'Marketplace', href: '#marketplace' },
+            { type: 'link' as const, text: 'Fractions', href: '#fractions' },
             { type: 'link' as const, text: 'Evidence & Shipments', href: '#evidence' }
           ]
         }
@@ -894,6 +1643,85 @@ export default function App({ walletButton }: AppProps) {
                   ]}
                   items={customerAssets.slice(0, 4)}
                   empty="No recent asset submissions"
+                />
+              </Container>
+
+              <Container variant="stacked" header={<Header variant="h2">My Layaways</Header>}>
+                <Table
+                  variant="embedded"
+                  contentDensity="compact"
+                  columnDefinitions={[
+                    {
+                      id: 'asset',
+                      header: 'Asset',
+                      cell: (item) => {
+                        const listing = dashboard?.listings.find((l) => l.id === item.listingId);
+                        const asset = listing ? dashboard?.assets.find((a) => a.id === listing.assetId) : null;
+                        return asset ? asset.title : 'Unknown Asset';
+                      },
+                      minWidth: 200
+                    },
+                    {
+                      id: 'progress',
+                      header: 'Progress',
+                      cell: (item) => (
+                        <span className="numeric-cell">
+                          {`${item.amountPaid.toLocaleString()} / ${item.totalPrice.toLocaleString()} USDC`}
+                        </span>
+                      ),
+                      minWidth: 180
+                    },
+                    {
+                      id: 'nextInstallment',
+                      header: 'Next Installment',
+                      cell: (item) => {
+                        if (item.status !== 'ACTIVE' || !item.installmentAmount) return <span className="muted-copy">—</span>;
+                        const remaining = item.totalPrice - item.amountPaid;
+                        const next = (remaining <= item.installmentAmount || (remaining - item.installmentAmount) < item.installmentAmount)
+                          ? remaining
+                          : item.installmentAmount;
+                        return <span className="numeric-cell">{`${next.toLocaleString()} USDC`}</span>;
+                      },
+                      minWidth: 140
+                    },
+                    {
+                      id: 'deadline',
+                      header: 'Deadline',
+                      cell: (item) => new Date(item.deadline).toLocaleDateString(),
+                      minWidth: 120
+                    },
+                    {
+                      id: 'status',
+                      header: 'Status',
+                      cell: (item) => (
+                        <Badge color={item.status === 'ACTIVE' ? 'blue' : (item.status === 'COMPLETED' ? 'green' : 'grey')}>
+                          {item.status}
+                        </Badge>
+                      ),
+                      minWidth: 110
+                    },
+                    {
+                      id: 'action',
+                      header: 'Action',
+                      cell: (item) => (
+                        item.status === 'ACTIVE' ? (
+                          <Button
+                            variant="primary"
+                            id={`pay-installment-${item.id}`}
+                            loading={actionLoadingId === item.id}
+                            onClick={() => handlePayInstallment(item)}
+                          >
+                            Pay Installment
+                          </Button>
+                        ) : (
+                          <span className="muted-copy">—</span>
+                        )
+                      ),
+                      minWidth: 160
+                    }
+                  ]}
+                  items={dashboard?.layaways?.filter((l) => l.buyerId === session?.userId) ?? []}
+                  empty="No active layaways"
                 />
               </Container>
             </SpaceBetween>
@@ -1162,15 +1990,24 @@ export default function App({ walletButton }: AppProps) {
                       },
                       { id: 'price', header: 'Price', cell: (item) => <span className="numeric-cell">{`${item.price.toLocaleString()} USDC`}</span>, minWidth: 120 },
                       { id: 'seller', header: 'Seller', cell: (item) => item.sellerId, minWidth: 140 },
-                      { id: 'status', header: 'Status', cell: (item) => <Badge color={item.status === 'ACTIVE' ? 'green' : 'grey'}>{item.status}</Badge>, minWidth: 120 },
+                      {
+                        id: 'status',
+                        header: 'Status',
+                        cell: (item) => (
+                          <Badge color={item.status === 'ACTIVE' ? 'green' : (item.status === 'RESERVED' ? 'blue' : 'grey')}>
+                            {item.status}
+                          </Badge>
+                        ),
+                        minWidth: 120
+                      },
                       {
                         id: 'action',
                         header: 'Action',
                         cell: (item) => (
                           <Button
-                            variant={item.status === 'ACTIVE' ? 'primary' : 'normal'}
+                            variant={item.status === 'ACTIVE' && item.sellerId !== session?.userId ? 'primary' : 'normal'}
                             loading={actionLoadingId === item.id}
-                            disabled={item.status !== 'ACTIVE'}
+                            disabled={item.status !== 'ACTIVE' || item.sellerId === session?.userId}
                             onClick={() => handleBuy(item)}
                           >
                             Buy with Layaway
@@ -1217,6 +2054,9 @@ export default function App({ walletButton }: AppProps) {
               </div>
             </SpaceBetween>
           );
+
+        case '#fractions':
+          return renderFractionsPage();
 
         case '#evidence':
           return (
@@ -1670,7 +2510,7 @@ export default function App({ walletButton }: AppProps) {
                 <div className="metric-tile">
                   <Box variant="awsui-key-label">Drafted offers</Box>
                   <Box variant="h2" className="metric-value">{draftedCount}</Box>
-                  <div className="metric-secondary-text">Pending signature</div>
+                  <div className="metric-secondary-text">Pending acceptance</div>
                 </div>
                 <div className="metric-tile">
                   <Box variant="awsui-key-label">Active loans</Box>
@@ -1728,7 +2568,7 @@ export default function App({ walletButton }: AppProps) {
                 <Container variant="stacked" header={<Header variant="h2">Offer Settlement Guidelines</Header>}>
                   <SpaceBetween size="s">
                     <Box className="muted-copy">
-                      Drafted loan offers are pushed to the Web3 network as signed message payloads. The customer accepts and receives the principal on-chain.
+                      Drafted loan offers are generated by the backend. The customer accepts terms in the application (on-chain acceptance via wallet signature is deferred to Phase 2).
                     </Box>
                     <div className="summary-grid summary-grid--single">
                       <div className="summary-item">
@@ -1980,7 +2820,11 @@ export default function App({ walletButton }: AppProps) {
                   <SpaceBetween size="m">
                     <div>
                       <Box variant="awsui-key-label">Contract Address</Box>
-                      <Box variant="p">0x1234567890123456789012345678901234567890</Box>
+                      <Box variant="p">
+                        {blockchainConfig && blockchainConfig.mode === 'anvil' && blockchainConfig.isDeploymentArtifactLoaded
+                          ? blockchainConfig.pawnProtocolAddress
+                          : "Mock mode - Not connected to deployed contract"}
+                      </Box>
                     </div>
                     <div>
                       <Box variant="awsui-key-label">Connected Web3 RPC Node</Box>
@@ -2048,11 +2892,25 @@ export default function App({ walletButton }: AppProps) {
                   </Container>
                   <Container variant="stacked" header={<Header variant="h3">Blockchain Web3 Gateway</Header>}>
                     <SpaceBetween size="xs">
-                      <StatusIndicator type="success">Connected</StatusIndicator>
+                      {blockchainConfig?.mode === 'anvil' ? (
+                        blockchainHealth?.healthy ? (
+                          <StatusIndicator type="success">Connected (Local Anvil)</StatusIndicator>
+                        ) : (
+                          <StatusIndicator type="error">Connection Error</StatusIndicator>
+                        )
+                      ) : (
+                        <StatusIndicator type="info">Mocked</StatusIndicator>
+                      )}
                       <Box className="muted-copy">
-                        Host: http://localhost:8545 (Local Anvil node). Mints NFT receipts and triggers smart contract disbursements.
+                        {blockchainConfig?.mode === 'anvil'
+                          ? blockchainHealth?.healthy
+                            ? `Connected to Local Anvil node at http://localhost:8545. PawnProtocol address: ${blockchainConfig.pawnProtocolAddress || 'unknown'}`
+                            : `Connection failed: ${blockchainHealth?.reason || 'unreachable'}`
+                          : "Host: Mock gateway. Simulates smart contract transactions offline."}
                       </Box>
-                      <span className="latency-text">Port: IBlockchainGateway | Latency: Local</span>
+                      <span className="latency-text">
+                        Port: IBlockchainGateway | Mode: {blockchainConfig ? blockchainConfig.mode : 'loading'}
+                      </span>
                     </SpaceBetween>
                   </Container>
                 </ColumnLayout>
@@ -2076,7 +2934,22 @@ export default function App({ walletButton }: AppProps) {
       <header className="console-topbar">
         <div className="console-topbar__brand">
           <span className="console-topbar__title">PawnShop Protocol</span>
-          <span className="console-topbar__env">Local Anvil</span>
+          <span className="console-topbar__env">
+            {blockchainConfig?.mode === 'anvil' ? 'Anvil Network' : 'Mock Mode'}
+          </span>
+          <span style={{ marginLeft: '12px', display: 'flex', alignItems: 'center' }} title={blockchainHealth?.reason}>
+            {blockchainConfig?.mode === 'anvil' ? (
+              blockchainHealth?.healthy ? (
+                <StatusIndicator type="success">Local Anvil connected</StatusIndicator>
+              ) : (
+                <StatusIndicator type="error">
+                  Local Anvil connection error
+                </StatusIndicator>
+              )
+            ) : (
+              <StatusIndicator type="info">Mock mode</StatusIndicator>
+            )}
+          </span>
         </div>
 
         <div className="console-topbar__search">
@@ -2108,8 +2981,8 @@ export default function App({ walletButton }: AppProps) {
           <div className="demo-session-selector">
             <Select
               className="demo-session-select"
-              selectedOption={roleSelectOptions.find((option) => option.value === userRole) ?? null}
-              onChange={({ detail }) => handleRoleChange(detail.selectedOption.value as 'CUSTOMER' | 'STAFF' | 'ADMIN')}
+              selectedOption={roleSelectOptions.find((option) => option.value === (session ? (session.role === 'CUSTOMER' ? session.userId : session.role) : 'customer-1')) ?? null}
+              onChange={({ detail }) => handleRoleChange(detail.selectedOption.value ?? '')}
               options={roleSelectOptions}
               ariaLabel="Select demo session"
               data-testid="role-select"
@@ -2121,7 +2994,7 @@ export default function App({ walletButton }: AppProps) {
             className="utility-button"
             iconName="refresh"
             ariaLabel="Refresh dashboard"
-            onClick={loadData}
+            onClick={() => loadData()}
             loading={loading}
           />
 
@@ -2208,6 +3081,85 @@ export default function App({ walletButton }: AppProps) {
               <Button variant="link" onClick={() => setIsListModalVisible(false)}>Cancel</Button>
               <Button variant="primary" formAction="submit" loading={actionLoadingId === listingAssetId}>
                 Publish Listing
+              </Button>
+            </div>
+          </SpaceBetween>
+        </form>
+      </Modal>
+
+      {/* Fractionalize Asset Modal */}
+      <Modal
+        onDismiss={() => setIsFractionalizeModalVisible(false)}
+        visible={isFractionalizeModalVisible}
+        closeAriaLabel="Close modal"
+        header="Fractionalize Physical Asset"
+      >
+        <form onSubmit={onSubmitFractionalize}>
+          <SpaceBetween size="m">
+            <FormField label="Asset ID">
+              <Input value={fractionalizeAssetId || ''} disabled />
+            </FormField>
+            <FormField label="Total Shares" description="The total number of fractions to split this asset into.">
+              <Input
+                type="number"
+                value={fractionalizeTotalShares}
+                onChange={({ detail }) => setFractionalizeTotalShares(detail.value)}
+                placeholder="100"
+              />
+            </FormField>
+            <FormField label="Target Price (USDC)" description="The total valuation target (must be divisible by Total Shares).">
+              <Input
+                type="number"
+                value={fractionalizeTargetPrice}
+                onChange={({ detail }) => setFractionalizeTargetPrice(detail.value)}
+                placeholder="5000"
+              />
+            </FormField>
+            <div className="modal-actions">
+              <Button variant="link" onClick={() => setIsFractionalizeModalVisible(false)}>Cancel</Button>
+              <Button variant="primary" formAction="submit" loading={actionLoadingId === fractionalizeAssetId}>
+                Fractionalize Asset
+              </Button>
+            </div>
+          </SpaceBetween>
+        </form>
+      </Modal>
+
+      {/* Buy Fractions Modal */}
+      <Modal
+        onDismiss={() => setIsBuyFractionsModalVisible(false)}
+        visible={isBuyFractionsModalVisible}
+        closeAriaLabel="Close modal"
+        header="Buy Fractional Shares"
+      >
+        <form onSubmit={onSubmitBuyFractions}>
+          <SpaceBetween size="m">
+            <FormField label="Asset ID">
+              <Input value={selectedFracAsset?.assetId || ''} disabled />
+            </FormField>
+            <FormField label="Available Shares">
+              <Input value={selectedFracAsset?.availableShares.toString() || '0'} disabled />
+            </FormField>
+            <FormField label="Price Per Share">
+              <Input value={`${selectedFracAsset?.pricePerShare || 0} USDC`} disabled />
+            </FormField>
+            <FormField label="Shares to Buy" description="Enter the number of fraction pieces to purchase.">
+              <Input
+                type="number"
+                value={buySharesCount}
+                onChange={({ detail }) => setBuySharesCount(detail.value)}
+                placeholder="1"
+              />
+            </FormField>
+            {selectedFracAsset && (
+              <Box variant="p" color="text-body-secondary">
+                Total Cost: {(parseInt(buySharesCount, 10) || 0) * selectedFracAsset.pricePerShare} USDC
+              </Box>
+            )}
+            <div className="modal-actions">
+              <Button variant="link" onClick={() => setIsBuyFractionsModalVisible(false)}>Cancel</Button>
+              <Button variant="primary" formAction="submit" loading={actionLoadingId === selectedFracAsset?.assetId}>
+                Buy Fractions
               </Button>
             </div>
           </SpaceBetween>
