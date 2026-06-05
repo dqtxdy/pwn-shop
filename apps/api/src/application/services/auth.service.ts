@@ -53,23 +53,29 @@ export class AuthService {
     return { accessToken, user };
   }
 
-  async demoLogin(role: UserRole): Promise<{
+  async demoLogin(role: UserRole, userIdOption?: string): Promise<{
     userId: string;
     displayName: string;
     role: UserRole;
     walletAddress?: string;
     token: string;
   }> {
-    let walletAddress = '';
+    let userId = '';
     if (role === UserRole.Customer) {
-      walletAddress = '0x1111111111111111111111111111111111111111';
+      userId = userIdOption || 'customer-1';
     } else if (role === UserRole.Staff) {
-      walletAddress = '0x2222222222222222222222222222222222222222';
+      userId = 'staff-1';
     } else if (role === UserRole.Admin) {
-      walletAddress = '0x3333333333333333333333333333333333333333';
+      userId = 'admin-1';
     } else {
       throw new UnauthorizedException(`Invalid role: ${role}`);
     }
+
+    const wallet = await this.repository.findWalletByUserId(userId);
+    if (!wallet) {
+      throw new UnauthorizedException(`Seed wallet for user ${userId} not found`);
+    }
+    const walletAddress = wallet.address;
 
     const user = await this.repository.findUserByWallet(walletAddress);
     if (!user) {
