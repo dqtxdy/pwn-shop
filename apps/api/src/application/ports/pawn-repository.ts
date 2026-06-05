@@ -13,7 +13,9 @@ import {
   Repayment,
   Shipment,
   User,
-  Wallet
+  Wallet,
+  FractionalAsset,
+  FractionalPosition
 } from '../../domain/models';
 
 export interface PawnRepository {
@@ -37,10 +39,21 @@ export interface PawnRepository {
   listListings(): Promise<Listing[]>;
   saveLayaway(layaway: Layaway): Promise<Layaway>;
   findLayaway(id: string): Promise<Layaway | undefined>;
+  listLayaways(): Promise<Layaway[]>;
   saveDispute(dispute: Dispute): Promise<Dispute>;
   findDispute(id: string): Promise<Dispute | undefined>;
   saveAuditEvent(event: AuditEvent): Promise<AuditEvent>;
   saveBlockchainTransaction(tx: BlockchainTransaction): Promise<BlockchainTransaction>;
   getDashboard(): Promise<PawnDashboard>;
+  findWalletByUserId(userId: string): Promise<Wallet | undefined>;
   reset?(): Promise<void>;
+
+  // Fractionalization methods
+  saveFractionalAsset(asset: FractionalAsset): Promise<FractionalAsset>;
+  findFractionalAsset(assetId: string): Promise<FractionalAsset | undefined>;
+  listFractionalAssets(): Promise<FractionalAsset[]>;
+  saveFractionalPosition(position: FractionalPosition): Promise<FractionalPosition>;
+  findFractionalPosition(id: string): Promise<FractionalPosition | undefined>;
+  findFractionalPositionByHolderAndAsset(holderId: string, assetId: string): Promise<FractionalPosition | undefined>;
+  listFractionalPositions(): Promise<FractionalPosition[]>;
 }

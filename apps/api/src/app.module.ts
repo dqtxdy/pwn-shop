@@ -21,11 +21,13 @@ import {
   MockPriceOracle,
   MockStorageProvider
 } from './infrastructure/adapters/mock-external.adapters';
+import { AnvilBlockchainGateway } from './infrastructure/adapters/anvil-blockchain.gateway';
 import {
   AdminController,
   AppraisalsController,
   AssetsController,
   AuthController,
+  BlockchainConfigController,
   BlockchainWebhooksController,
   DemoController,
   DisputesController,
@@ -52,6 +54,7 @@ import {
     AppraisalsController,
     AssetsController,
     AuthController,
+    BlockchainConfigController,
     BlockchainWebhooksController,
     DemoController,
     DisputesController,
@@ -67,13 +70,34 @@ import {
   providers: [
     AuthService,
     PawnWorkflowService,
-    { provide: PAWN_REPOSITORY, useClass: InMemoryPawnRepository },
+    {
+      provide: PAWN_REPOSITORY,
+      useFactory: async () => {
+        if (process.env.PERSISTENCE_MODE === 'postgres') {
+          const { PostgresPawnRepository } = await import(
+            './infrastructure/persistence/repositories/postgres-pawn.repository'
+          );
+          const repo = new PostgresPawnRepository();
+          await repo.initialize();
+          return repo;
+        }
+        return new InMemoryPawnRepository();
+      }
+    },
     { provide: KYC_PROVIDER, useClass: MockKycProvider },
     { provide: LOGISTICS_PROVIDER, useClass: MockLogisticsProvider },
     { provide: PRICE_ORACLE, useClass: MockPriceOracle },
     { provide: STORAGE_PROVIDER, useClass: MockStorageProvider },
-    { provide: BLOCKCHAIN_GATEWAY, useClass: MockBlockchainGateway },
+    {
+      provide: BLOCKCHAIN_GATEWAY,
+      useFactory: () => {
+        if (process.env.BLOCKCHAIN_MODE === 'anvil') {
+          return new AnvilBlockchainGateway();
+        }
+        return new MockBlockchainGateway();
+      }
+    },
     { provide: NOTIFICATION_GATEWAY, useClass: MockNotificationGateway }
   ]
 })
-export class AppModule {}
+export class AppModule { }

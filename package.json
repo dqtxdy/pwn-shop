@@ -10,6 +10,13 @@
     "dev:api": "npm --workspace apps/api run start:dev",
     "dev:web": "npm --workspace apps/web run dev",
     "build": "npm --workspaces run build --if-present",
-    "test": "npm --workspaces run test --if-present"
+    "test": "npm --workspaces run test --if-present",
+    "reset:anvil": "node scripts/reset-anvil.mjs",
+    "deploy:local": "node scripts/deploy-local-anvil.mjs",
+    "deploy:contracts": "cd PawnShop-SmartContract && /home/respectthanh/.foundry/bin/forge script script/DeployPawnProtocol.s.sol --rpc-url http://127.0.0.1:8545 --broadcast",
+    "test:smoke": "node scripts/reset-anvil.mjs && npm run deploy:local && BLOCKCHAIN_MODE=anvil npm --workspace apps/api test -- anvil-smoke.spec.ts",
+    "db:up": "node scripts/db-up.mjs",
+    "db:down": "docker compose down",
+    "test:postgres": "POSTGRES_TESTS=1 npm --workspace apps/api test -- pawn-repository.spec.ts"
   }
 }
