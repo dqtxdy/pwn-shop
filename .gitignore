@@ -29,3 +29,8 @@ pnpm-debug.log*
 # External or legacy repos (not pushed)
 awesome-design-systems/
 PawnShop-SmartContract/
+
+# Developer and agent tracking files
+task.md
+walkthrough.md
+scratch/
