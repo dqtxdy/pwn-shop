@@ -1,0 +1,11 @@
+# Compiler outputs
+out/
+cache/
+broadcast/
+
+# Deployments/artifacts
+deployments/
+
+# Dependencies
+lib/
+
