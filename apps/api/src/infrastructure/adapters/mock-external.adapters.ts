@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { createHash, randomUUID } from 'crypto';
 import { KycStatus, ShipmentStatus } from '../../domain/enums';
 import {
+  BlockchainConfig,
   BlockchainGateway,
   KycProvider,
   LogisticsProvider,
@@ -62,8 +63,150 @@ export class MockBlockchainGateway implements BlockchainGateway {
     return { txHash: `0x${randomUUID().replace(/-/g, '').padEnd(64, '0')}` };
   }
 
-  async recordRepayment() {
+  async recordRepayment(input: {
+    loanId: string;
+    amount: number;
+    txHash: string;
+    assetId: string;
+    borrowerWallet: string;
+  }) {
     return undefined;
+  }
+
+  async updateAppraisal(input: {
+    assetId: string;
+    estimatedValue: number;
+    ltvBps: number;
+    interestAprBps: number;
+  }) {
+    return { txHash: `0x${randomUUID().replace(/-/g, '').padEnd(64, '0')}` };
+  }
+
+  async verifyLoanCreated(
+    txHash: string,
+    assetId: string,
+    borrowerWallet: string,
+    principal: number
+  ) {
+    return undefined;
+  }
+
+  async prepareCreateListing(input: {
+    assetId: string;
+    sellerWallet: string;
+    price: number;
+    isConsigned: boolean;
+  }) {
+    return { txHash: `0x${randomUUID().replace(/-/g, '').padEnd(64, '0')}` };
+  }
+
+  async verifyListingCreated(
+    txHash: string,
+    assetId: string,
+    sellerWallet: string,
+    price: number
+  ) {
+    return undefined;
+  }
+
+  async prepareStartLayaway(input: {
+    assetId: string;
+    buyerWallet: string;
+    downPayment: number;
+    monthsDuration: number;
+  }) {
+    return { txHash: `0x${randomUUID().replace(/-/g, '').padEnd(64, '0')}` };
+  }
+
+  async verifyLayawayStarted(
+    txHash: string,
+    assetId: string,
+    buyerWallet: string,
+    downPayment: number
+  ) {
+    return undefined;
+  }
+
+  async preparePayLayawayInstallment(_input: {
+    assetId: string;
+    buyerWallet: string;
+    installmentAmount: bigint;
+  }) {
+    return { status: 'MOCK_OK', actions: [] };
+  }
+
+  async verifyLayawayInstallmentPaid(_input: {
+    txHash: string;
+    assetId: string;
+    buyerWallet: string;
+    installmentAmount: bigint;
+    isFinal: boolean;
+  }) {
+    return undefined;
+  }
+
+  async prepareFractionalizeAsset(input: {
+    assetId: string;
+    ownerWallet: string;
+    totalShares: number;
+    targetPrice: number;
+  }) {
+    return { txHash: `0x${randomUUID().replace(/-/g, '').padEnd(64, '0')}` };
+  }
+
+  async verifyAssetFractionalized(input: {
+    txHash: string;
+    assetId: string;
+    ownerWallet: string;
+    totalShares: number;
+    targetPrice: number;
+  }) {
+    return undefined;
+  }
+
+  async prepareBuyFractions(input: {
+    assetId: string;
+    buyerWallet: string;
+    sharesToBuy: number;
+    pricePerShare: number;
+  }) {
+    return { txHash: `0x${randomUUID().replace(/-/g, '').padEnd(64, '0')}` };
+  }
+
+  async verifyFractionsPurchased(input: {
+    txHash: string;
+    assetId: string;
+    buyerWallet: string;
+    sharesToBuy: number;
+    pricePerShare: number;
+  }) {
+    return undefined;
+  }
+
+  async prepareRedeemAsset(input: {
+    assetId: string;
+    redeemerWallet: string;
+  }) {
+    return { txHash: `0x${randomUUID().replace(/-/g, '').padEnd(64, '0')}` };
+  }
+
+  async verifyAssetRedeemed(input: {
+    txHash: string;
+    assetId: string;
+    redeemerWallet: string;
+  }) {
+    return undefined;
+  }
+
+  getBlockchainConfig(): BlockchainConfig {
+    return {
+      mode: 'mock',
+      isDeploymentArtifactLoaded: false
+    };
+  }
+
+  async checkHealth(): Promise<{ healthy: boolean; reason?: string }> {
+    return { healthy: true };
   }
 }
 

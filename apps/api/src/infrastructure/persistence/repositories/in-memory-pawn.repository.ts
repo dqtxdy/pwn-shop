@@ -1,4 +1,6 @@
 import { Injectable } from '@nestjs/common';
+import * as fs from 'fs';
+import * as path from 'path';
 import {
   Appraisal,
   Asset,
@@ -14,7 +16,9 @@ import {
   Repayment,
   Shipment,
   User,
-  Wallet
+  Wallet,
+  FractionalAsset,
+  FractionalPosition
 } from '../../../domain/models';
 import {
   AssetStatus,
@@ -40,14 +44,21 @@ export class InMemoryPawnRepository implements PawnRepository {
     // Seed users
     const customerUser: User = {
       id: 'customer-1',
-      displayName: 'Demo Customer',
+      displayName: 'Demo Customer Seller',
+      role: UserRole.Customer,
+      kycStatus: KycStatus.Verified,
+      createdAt: new Date(now.getTime() - 30 * 24 * 3600000)
+    };
+    const customer2User: User = {
+      id: 'customer-2',
+      displayName: 'Demo Customer Buyer',
       role: UserRole.Customer,
       kycStatus: KycStatus.Verified,
       createdAt: new Date(now.getTime() - 30 * 24 * 3600000)
     };
     const staffUser: User = {
       id: 'staff-1',
-      displayName: 'Demo Staff',
+      displayName: 'Demo Staff / Validator',
       role: UserRole.Staff,
       kycStatus: KycStatus.Verified,
       createdAt: new Date(now.getTime() - 30 * 24 * 3600000)
@@ -60,6 +71,7 @@ export class InMemoryPawnRepository implements PawnRepository {
       createdAt: new Date(now.getTime() - 30 * 24 * 3600000)
     };
     this.users.set(customerUser.id, customerUser);
+    this.users.set(customer2User.id, customer2User);
     this.users.set(staffUser.id, staffUser);
     this.users.set(adminUser.id, adminUser);
 
@@ -68,6 +80,13 @@ export class InMemoryPawnRepository implements PawnRepository {
       id: 'wallet-customer-1',
       userId: 'customer-1',
       address: '0x1111111111111111111111111111111111111111',
+      chainId: 1,
+      verifiedAt: now
+    };
+    const customer2Wallet: Wallet = {
+      id: 'wallet-customer-2',
+      userId: 'customer-2',
+      address: '0x4444444444444444444444444444444444444444',
       chainId: 1,
       verifiedAt: now
     };
@@ -86,6 +105,7 @@ export class InMemoryPawnRepository implements PawnRepository {
       verifiedAt: now
     };
     this.wallets.set(customerWallet.id, customerWallet);
+    this.wallets.set(customer2Wallet.id, customer2Wallet);
     this.wallets.set(staffWallet.id, staffWallet);
     this.wallets.set(adminWallet.id, adminWallet);
 
@@ -105,7 +125,7 @@ export class InMemoryPawnRepository implements PawnRepository {
       title: 'MacBook Pro M3',
       category: 'electronics',
       description: '16GB RAM, 512GB SSD, Space Gray',
-      status: AssetStatus.LoanActive,
+      status: process.env.BLOCKCHAIN_MODE === 'anvil' ? AssetStatus.Received : AssetStatus.LoanActive,
       declaredValue: 1800,
       createdAt: new Date(now.getTime() - 24 * 3600000)
     };
@@ -190,21 +210,24 @@ export class InMemoryPawnRepository implements PawnRepository {
       createdAt: new Date(now.getTime() - 22 * 3600000)
     };
     this.appraisals.set(appraisal1.id, appraisal1);
-    this.appraisals.set(appraisal2.id, appraisal2);
 
-    const loan2: Loan = {
-      id: 'L-202',
-      assetId: 'A-1002',
-      borrowerId: 'customer-1',
-      principal: 1080,
-      aprBps: 500,
-      durationDays: 30,
-      status: LoanStatus.Active,
-      contractTxHash: '0x3a4b5c6d7e8f901a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f901a2b3c4d5e6f',
-      dueAt: new Date(now.getTime() + 29 * 24 * 3600000),
-      createdAt: new Date(now.getTime() - 22 * 3600000)
-    };
-    this.loans.set(loan2.id, loan2);
+    if (process.env.BLOCKCHAIN_MODE !== 'anvil') {
+      this.appraisals.set(appraisal2.id, appraisal2);
+
+      const loan2: Loan = {
+        id: 'L-202',
+        assetId: 'A-1002',
+        borrowerId: 'customer-1',
+        principal: 1080,
+        aprBps: 500,
+        durationDays: 30,
+        status: LoanStatus.Active,
+        contractTxHash: '0x3a4b5c6d7e8f901a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f901a2b3c4d5e6f',
+        dueAt: new Date(now.getTime() + 29 * 24 * 3600000),
+        createdAt: new Date(now.getTime() - 22 * 3600000)
+      };
+      this.loans.set(loan2.id, loan2);
+    }
 
     const listing1: Listing = {
       id: 'LIST-001',
@@ -245,8 +268,67 @@ export class InMemoryPawnRepository implements PawnRepository {
       createdAt: new Date(now.getTime() - 1.5 * 3600000)
     };
     this.auditEvents.set(event1.id, event1);
-    this.auditEvents.set(event2.id, event2);
+    if (process.env.BLOCKCHAIN_MODE !== 'anvil') {
+      this.auditEvents.set(event2.id, event2);
+    }
     this.auditEvents.set(event3.id, event3);
+
+    if (process.env.BLOCKCHAIN_MODE === 'anvil') {
+      // update seeded wallets
+       const walletCustomer = this.wallets.get('wallet-customer-1');
+      if (walletCustomer) {
+        walletCustomer.address = '0x70997970c51812dc3a010c7d01b50e0d17dc79c8';
+        walletCustomer.chainId = 31337;
+      }
+      const walletCustomer2 = this.wallets.get('wallet-customer-2');
+      if (walletCustomer2) {
+        walletCustomer2.address = '0x90f79bf6eb2c4f870365e785982e1f101e93b906';
+        walletCustomer2.chainId = 31337;
+      }
+      const walletStaff = this.wallets.get('wallet-staff-1');
+      if (walletStaff) {
+        walletStaff.address = '0x3c44cdddb6a900fa2b585dd299e03d12fa4293bc';
+        walletStaff.chainId = 31337;
+      }
+      const walletAdmin = this.wallets.get('wallet-admin-1');
+      if (walletAdmin) {
+        walletAdmin.address = '0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266';
+        walletAdmin.chainId = 31337;
+      }
+
+      // load local-anvil.json
+      const pathsToTry = [
+        path.resolve(process.cwd(), '../../PawnShop-SmartContract/deployments/local-anvil.json'),
+        path.resolve(process.cwd(), 'PawnShop-SmartContract/deployments/local-anvil.json'),
+        path.resolve(__dirname, '../../../../../PawnShop-SmartContract/deployments/local-anvil.json'),
+        path.resolve(__dirname, '../../../../PawnShop-SmartContract/deployments/local-anvil.json'),
+      ];
+
+      let tokenIdMap: Record<string, number> = {};
+      for (const p of pathsToTry) {
+        try {
+          if (fs.existsSync(p)) {
+            const content = fs.readFileSync(p, 'utf8');
+            const artifact = JSON.parse(content);
+            if (artifact.tokenIdMap) {
+              tokenIdMap = typeof artifact.tokenIdMap === 'string'
+                ? JSON.parse(artifact.tokenIdMap)
+                : artifact.tokenIdMap;
+            }
+            break;
+          }
+        } catch (err) {
+          // continue
+        }
+      }
+
+      // Populate tokenId on seeded assets
+      for (const [id, asset] of this.assets.entries()) {
+        if (tokenIdMap[id] !== undefined) {
+          asset.tokenId = String(tokenIdMap[id]);
+        }
+      }
+    }
   }
 
   async reset(): Promise<void> {
@@ -264,6 +346,8 @@ export class InMemoryPawnRepository implements PawnRepository {
     this.disputes.clear();
     this.auditEvents.clear();
     this.blockchainTransactions.clear();
+    this.fractionalAssets.clear();
+    this.fractionalPositions.clear();
     this.protocolFeesCollected = 8420;
 
     this.initializeSeededData();
@@ -285,6 +369,8 @@ export class InMemoryPawnRepository implements PawnRepository {
   private readonly disputes = new Map<string, Dispute>();
   private readonly auditEvents = new Map<string, AuditEvent>();
   private readonly blockchainTransactions = new Map<string, BlockchainTransaction>();
+  private readonly fractionalAssets = new Map<string, FractionalAsset>();
+  private readonly fractionalPositions = new Map<string, FractionalPosition>();
 
   async saveUser(user: User): Promise<User> {
     this.users.set(user.id, user);
@@ -297,6 +383,7 @@ export class InMemoryPawnRepository implements PawnRepository {
   }
 
   async saveWallet(wallet: Wallet): Promise<Wallet> {
+    wallet.address = wallet.address.toLowerCase();
     this.wallets.set(wallet.id, wallet);
     return wallet;
   }
@@ -379,6 +466,10 @@ export class InMemoryPawnRepository implements PawnRepository {
     return this.layaways.get(id);
   }
 
+  async listLayaways(): Promise<Layaway[]> {
+    return [...this.layaways.values()];
+  }
+
   async saveDispute(dispute: Dispute): Promise<Dispute> {
     this.disputes.set(dispute.id, dispute);
     return dispute;
@@ -405,7 +496,44 @@ export class InMemoryPawnRepository implements PawnRepository {
       listings: [...this.listings.values()],
       disputes: [...this.disputes.values()],
       auditEvents: [...this.auditEvents.values()],
+      layaways: [...this.layaways.values()],
       protocolFeesCollected: this.protocolFeesCollected
     };
+  }
+
+  async findWalletByUserId(userId: string): Promise<Wallet | undefined> {
+    return [...this.wallets.values()].find((w) => w.userId === userId);
+  }
+
+  async saveFractionalAsset(asset: FractionalAsset): Promise<FractionalAsset> {
+    this.fractionalAssets.set(asset.assetId, asset);
+    return asset;
+  }
+
+  async findFractionalAsset(assetId: string): Promise<FractionalAsset | undefined> {
+    return this.fractionalAssets.get(assetId);
+  }
+
+  async listFractionalAssets(): Promise<FractionalAsset[]> {
+    return [...this.fractionalAssets.values()];
+  }
+
+  async saveFractionalPosition(position: FractionalPosition): Promise<FractionalPosition> {
+    this.fractionalPositions.set(position.id, position);
+    return position;
+  }
+
+  async findFractionalPosition(id: string): Promise<FractionalPosition | undefined> {
+    return this.fractionalPositions.get(id);
+  }
+
+  async findFractionalPositionByHolderAndAsset(holderId: string, assetId: string): Promise<FractionalPosition | undefined> {
+    return [...this.fractionalPositions.values()].find(
+      (p) => p.holderId === holderId && p.assetId === assetId
+    );
+  }
+
+  async listFractionalPositions(): Promise<FractionalPosition[]> {
+    return [...this.fractionalPositions.values()];
   }
 }

@@ -1,6 +1,13 @@
-import { Body, Controller, Get, Param, Post, ForbiddenException } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, ForbiddenException, Inject, UseGuards } from '@nestjs/common';
 import { AuthService } from '../../application/services/auth.service';
 import { PawnWorkflowService } from '../../application/services/pawn-workflow.service';
+import { BLOCKCHAIN_GATEWAY } from '../../common/tokens';
+import { BlockchainGateway } from '../../application/ports/external-services';
+import { JwtAuthGuard } from './guards/jwt-auth.guard';
+import { RolesGuard } from './guards/roles.guard';
+import { Roles } from './decorators/roles.decorator';
+import { CurrentUser } from './decorators/current-user.decorator';
+import { UserRole } from '../../domain/enums';
 import {
   AcceptLoanDto,
   BlockchainWebhookDto,
@@ -16,12 +23,15 @@ import {
   UploadEvidenceDto,
   WalletLoginDto,
   PayLayawayDto,
-  DemoLoginDto
+  DemoLoginDto,
+  FractionalizeAssetDto,
+  BuyFractionsDto,
+  RedeemAssetDto
 } from '../../application/dto/pawn.dto';
 
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+  constructor(private readonly authService: AuthService) { }
 
   @Get('wallet/nonce/:walletAddress')
   nonce(@Param('walletAddress') walletAddress: string) {
@@ -35,166 +45,238 @@ export class AuthController {
 
   @Post('demo-login')
   demoLogin(@Body() dto: DemoLoginDto) {
-    // TODO: In a production environment, this mock adapter will be replaced by fully secure JWT verification guards.
-    return this.authService.demoLogin(dto.role);
+    return this.authService.demoLogin(dto.role, dto.userId);
   }
 }
 
-
 @Controller('kyc')
+@UseGuards(JwtAuthGuard, RolesGuard)
 export class KycController {
-  constructor(private readonly workflow: PawnWorkflowService) {}
+  constructor(private readonly workflow: PawnWorkflowService) { }
 
   @Post(':userId/:walletAddress')
-  request(@Param('userId') userId: string, @Param('walletAddress') walletAddress: string) {
+  @Roles(UserRole.Customer)
+  request(@Param('userId') userId: string, @Param('walletAddress') walletAddress: string, @CurrentUser() user: any) {
+    if (user.id !== userId) {
+      throw new ForbiddenException('Cannot request KYC for another user');
+    }
     return this.workflow.requestKyc(userId, walletAddress);
   }
 }
 
 @Controller('assets')
+@UseGuards(JwtAuthGuard, RolesGuard)
 export class AssetsController {
-  constructor(private readonly workflow: PawnWorkflowService) {}
+  constructor(private readonly workflow: PawnWorkflowService) { }
 
   @Post()
-  create(@Body() dto: CreateAssetDto) {
-    return this.workflow.createAsset(dto);
+  @Roles(UserRole.Customer)
+  create(@Body() dto: CreateAssetDto, @CurrentUser() user: any) {
+    return this.workflow.createAsset(dto, user);
   }
 
   @Get()
-  list() {
-    return this.workflow.listAssets();
+  @Roles(UserRole.Customer, UserRole.Staff, UserRole.Admin)
+  list(@CurrentUser() user: any) {
+    return this.workflow.listAssets(user);
   }
 }
 
 @Controller('evidence')
+@UseGuards(JwtAuthGuard, RolesGuard)
 export class EvidenceController {
-  constructor(private readonly workflow: PawnWorkflowService) {}
+  constructor(private readonly workflow: PawnWorkflowService) { }
 
   @Post()
-  upload(@Body() dto: UploadEvidenceDto) {
-    return this.workflow.uploadEvidence(dto);
+  @Roles(UserRole.Customer, UserRole.Staff, UserRole.Admin)
+  upload(@Body() dto: UploadEvidenceDto, @CurrentUser() user: any) {
+    dto.uploadedBy = user.id;
+    return this.workflow.uploadEvidence(dto, user);
   }
 }
 
 @Controller('shipments')
+@UseGuards(JwtAuthGuard, RolesGuard)
 export class ShipmentsController {
-  constructor(private readonly workflow: PawnWorkflowService) {}
+  constructor(private readonly workflow: PawnWorkflowService) { }
 
   @Post()
-  create(@Body() dto: CreateShipmentDto) {
-    return this.workflow.createShipment(dto);
+  @Roles(UserRole.Customer, UserRole.Staff)
+  create(@Body() dto: CreateShipmentDto, @CurrentUser() user: any) {
+    return this.workflow.createShipment(dto, user);
   }
 
   @Get(':assetId')
-  track(@Param('assetId') assetId: string) {
-    return this.workflow.trackShipment(assetId);
+  @Roles(UserRole.Customer, UserRole.Staff, UserRole.Admin)
+  track(@Param('assetId') assetId: string, @CurrentUser() user: any) {
+    return this.workflow.trackShipment(assetId, user);
   }
 }
 
 @Controller('appraisals')
+@UseGuards(JwtAuthGuard, RolesGuard)
 export class AppraisalsController {
-  constructor(private readonly workflow: PawnWorkflowService) {}
+  constructor(private readonly workflow: PawnWorkflowService) { }
 
   @Post()
-  create(@Body() dto: CreateAppraisalDto) {
+  @Roles(UserRole.Staff)
+  create(@Body() dto: CreateAppraisalDto, @CurrentUser() user: any) {
+    dto.appraiserId = user.id;
     return this.workflow.createAppraisal(dto);
   }
 }
 
 @Controller('loans')
+@UseGuards(JwtAuthGuard, RolesGuard)
 export class LoansController {
-  constructor(private readonly workflow: PawnWorkflowService) {}
+  constructor(private readonly workflow: PawnWorkflowService) { }
 
   @Post()
+  @Roles(UserRole.Staff)
   createOffer(@Body() dto: CreateLoanOfferDto) {
     return this.workflow.createLoanOffer(dto);
   }
 
   @Post(':loanId/accept')
-  accept(@Param('loanId') loanId: string, @Body() dto: AcceptLoanDto) {
-    return this.workflow.acceptLoan(loanId, dto);
+  @Roles(UserRole.Customer)
+  accept(@Param('loanId') loanId: string, @Body() dto: AcceptLoanDto, @CurrentUser() user: any) {
+    return this.workflow.acceptLoan(loanId, dto, user);
   }
 }
 
 @Controller('repayments')
+@UseGuards(JwtAuthGuard, RolesGuard)
 export class RepaymentsController {
-  constructor(private readonly workflow: PawnWorkflowService) {}
+  constructor(private readonly workflow: PawnWorkflowService) { }
 
   @Post()
-  record(@Body() dto: RecordRepaymentDto) {
-    return this.workflow.recordRepayment(dto);
+  @Roles(UserRole.Customer)
+  record(@Body() dto: RecordRepaymentDto, @CurrentUser() user: any) {
+    return this.workflow.recordRepayment(dto, user);
   }
 }
 
 @Controller('marketplace')
+@UseGuards(JwtAuthGuard, RolesGuard)
 export class MarketplaceController {
-  constructor(private readonly workflow: PawnWorkflowService) {}
+  constructor(private readonly workflow: PawnWorkflowService) { }
 
   @Get()
+  @Roles(UserRole.Customer, UserRole.Staff, UserRole.Admin)
   list() {
     return this.workflow.listListings();
   }
 
   @Post('listings')
-  create(@Body() dto: CreateListingDto) {
-    return this.workflow.createListing(dto);
+  @Roles(UserRole.Customer, UserRole.Admin)
+  create(@Body() dto: CreateListingDto, @CurrentUser() user: any) {
+    if (user.role === UserRole.Customer) {
+      if (dto.isProtocolOwned) {
+        throw new ForbiddenException('Customer cannot create protocol-owned listings');
+      }
+      dto.sellerId = user.id;
+    } else if (user.role === UserRole.Admin) {
+      if (!dto.isProtocolOwned) {
+        throw new ForbiddenException('Admin can only create protocol-owned listings');
+      }
+      dto.sellerId = 'admin-1';
+    } else {
+      throw new ForbiddenException('Insufficient role permissions');
+    }
+    return this.workflow.createListing(dto, user);
   }
 }
 
 @Controller('layaways')
+@UseGuards(JwtAuthGuard, RolesGuard)
 export class LayawaysController {
-  constructor(private readonly workflow: PawnWorkflowService) {}
+  constructor(private readonly workflow: PawnWorkflowService) { }
 
   @Post()
-  create(@Body() dto: CreateLayawayDto) {
-    return this.workflow.createLayaway(dto);
+  @Roles(UserRole.Customer)
+  create(@Body() dto: CreateLayawayDto, @CurrentUser() user: any) {
+    return this.workflow.createLayaway(dto, user);
   }
 
   @Post(':layawayId/pay')
-  pay(@Param('layawayId') layawayId: string, @Body() dto: PayLayawayDto) {
-    return this.workflow.payLayaway(layawayId, dto);
+  @Roles(UserRole.Customer)
+  pay(@Param('layawayId') layawayId: string, @Body() dto: PayLayawayDto, @CurrentUser() user: any) {
+    return this.workflow.payLayaway(layawayId, dto, user);
   }
 }
 
 @Controller('fractions')
+@UseGuards(JwtAuthGuard, RolesGuard)
 export class FractionsController {
-  @Post()
-  createPool() {
-    return {
-      status: 'PENDING_CHAIN_TRANSACTION',
-      message: 'Fractionalization is executed through PawnProtocol and indexed by /webhooks/blockchain.'
-    };
+  constructor(private readonly workflow: PawnWorkflowService) {}
+
+  @Post('fractionalize')
+  @Roles(UserRole.Customer, UserRole.Admin)
+  fractionalize(@Body() dto: FractionalizeAssetDto, @CurrentUser() user: any) {
+    return this.workflow.fractionalizeAsset(dto, user.id);
+  }
+
+  @Post('buy')
+  @Roles(UserRole.Customer)
+  buy(@Body() dto: BuyFractionsDto, @CurrentUser() user: any) {
+    return this.workflow.buyFractions(dto, user.id);
+  }
+
+  @Post('redeem')
+  @Roles(UserRole.Customer)
+  redeem(@Body() dto: RedeemAssetDto, @CurrentUser() user: any) {
+    return this.workflow.redeemAsset(dto, user.id);
+  }
+
+  @Get('assets')
+  @Roles(UserRole.Customer, UserRole.Staff, UserRole.Admin)
+  listAssets() {
+    return this.workflow.listFractionalAssets();
+  }
+
+  @Get('positions/:userId')
+  @Roles(UserRole.Customer, UserRole.Staff, UserRole.Admin)
+  getPositions(@Param('userId') userId: string, @CurrentUser() user: any) {
+    if (user.role === UserRole.Customer && user.id !== userId) {
+      throw new ForbiddenException('Cannot view positions of another customer');
+    }
+    return this.workflow.findFractionalPositions(userId);
   }
 }
 
 @Controller('disputes')
+@UseGuards(JwtAuthGuard, RolesGuard)
 export class DisputesController {
-  constructor(private readonly workflow: PawnWorkflowService) {}
+  constructor(private readonly workflow: PawnWorkflowService) { }
 
   @Post()
-  create(@Body() dto: CreateDisputeDto) {
-    return this.workflow.createDispute(dto);
+  @Roles(UserRole.Customer)
+  create(@Body() dto: CreateDisputeDto, @CurrentUser() user: any) {
+    return this.workflow.createDispute(dto, user);
   }
 
   @Post(':id/resolve')
+  @Roles(UserRole.Admin)
   resolve(@Param('id') id: string, @Body() dto: ResolveDisputeDto) {
     return this.workflow.resolveDispute(id, dto);
   }
 }
 
 @Controller('admin')
+@UseGuards(JwtAuthGuard, RolesGuard)
 export class AdminController {
-  constructor(private readonly workflow: PawnWorkflowService) {}
+  constructor(private readonly workflow: PawnWorkflowService) { }
 
   @Get('dashboard')
-  dashboard() {
-    return this.workflow.dashboard();
+  @Roles(UserRole.Admin, UserRole.Staff, UserRole.Customer)
+  dashboard(@CurrentUser() user: any) {
+    return this.workflow.dashboard(user);
   }
 }
 
 @Controller('webhooks/blockchain')
 export class BlockchainWebhooksController {
-  constructor(private readonly workflow: PawnWorkflowService) {}
+  constructor(private readonly workflow: PawnWorkflowService) { }
 
   @Post()
   record(@Body() dto: BlockchainWebhookDto) {
@@ -204,7 +286,7 @@ export class BlockchainWebhooksController {
 
 @Controller('demo')
 export class DemoController {
-  constructor(private readonly workflow: PawnWorkflowService) {}
+  constructor(private readonly workflow: PawnWorkflowService) { }
 
   @Post('reset')
   async reset() {
@@ -213,5 +295,26 @@ export class DemoController {
     }
     await this.workflow.reset();
     return { success: true, message: 'InMemory database reset successfully' };
+  }
+}
+
+@Controller('blockchain')
+export class BlockchainConfigController {
+  constructor(
+    @Inject(BLOCKCHAIN_GATEWAY) private readonly blockchainGateway: BlockchainGateway
+  ) {}
+
+  @Get('config')
+  getConfig() {
+    return this.blockchainGateway.getBlockchainConfig();
+  }
+
+  @Get('health')
+  async getHealth() {
+    const health = await this.blockchainGateway.checkHealth();
+    return {
+      mode: this.blockchainGateway.getBlockchainConfig().mode,
+      ...health
+    };
   }
 }

@@ -7,7 +7,8 @@ import {
   LoanStatus,
   ShipmentDirection,
   ShipmentStatus,
-  UserRole
+  UserRole,
+  LayawayStatus
 } from './enums';
 
 export interface User {
@@ -119,6 +120,15 @@ export interface Layaway {
   totalPrice: number;
   amountPaid: number;
   deadline: Date;
+  status: LayawayStatus;
+  monthsDuration?: number;
+  installmentAmount?: number;
+  downPayment?: number;
+  paidInstallments?: number;
+  amountPaidWei?: string;
+  downPaymentWei?: string;
+  lastPaymentTxHash?: string;
+  completedTxHash?: string;
 }
 
 export interface FractionalPosition {
@@ -127,6 +137,15 @@ export interface FractionalPosition {
   holderId: string;
   shares: number;
   totalShares: number;
+}
+
+export interface FractionalAsset {
+  assetId: string;
+  originalOwner: string;
+  totalShares: number;
+  availableShares: number;
+  pricePerShare: number;
+  status: 'ACTIVE' | 'SOLD_OUT' | 'REDEEMED';
 }
 
 export interface Dispute {
@@ -165,5 +184,6 @@ export interface PawnDashboard {
   listings: Listing[];
   disputes: Dispute[];
   auditEvents: AuditEvent[];
+  layaways: Layaway[];
   protocolFeesCollected: number;
 }

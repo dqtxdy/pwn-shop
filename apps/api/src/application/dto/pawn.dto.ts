@@ -1,4 +1,4 @@
-import { IsBoolean, IsEnum, IsInt, IsNumber, IsOptional, IsPositive, IsString, Min } from 'class-validator';
+import { IsBoolean, IsEnum, IsInt, IsNumber, IsOptional, IsPositive, IsString, Min, IsIn } from 'class-validator';
 import { EvidenceKind, ShipmentDirection, UserRole } from '../../domain/enums';
 
 export class WalletLoginDto {
@@ -13,8 +13,9 @@ export class WalletLoginDto {
 }
 
 export class CreateAssetDto {
+  @IsOptional()
   @IsString()
-  ownerId!: string;
+  ownerId?: string;
 
   @IsString()
   title!: string;
@@ -34,8 +35,9 @@ export class UploadEvidenceDto {
   @IsString()
   assetId!: string;
 
+  @IsOptional()
   @IsString()
-  uploadedBy!: string;
+  uploadedBy?: string;
 
   @IsEnum(EvidenceKind)
   kind!: EvidenceKind;
@@ -65,8 +67,9 @@ export class CreateAppraisalDto {
   @IsString()
   assetId!: string;
 
+  @IsOptional()
   @IsString()
-  appraiserId!: string;
+  appraiserId?: string;
 
   @IsNumber()
   @IsPositive()
@@ -101,6 +104,10 @@ export class CreateLoanOfferDto {
 export class AcceptLoanDto {
   @IsString()
   borrowerWallet!: string;
+
+  @IsOptional()
+  @IsString()
+  txHash?: string;
 }
 
 export class RecordRepaymentDto {
@@ -119,8 +126,9 @@ export class CreateListingDto {
   @IsString()
   assetId!: string;
 
+  @IsOptional()
   @IsString()
-  sellerId!: string;
+  sellerId?: string;
 
   @IsNumber()
   @IsPositive()
@@ -128,35 +136,51 @@ export class CreateListingDto {
 
   @IsBoolean()
   isProtocolOwned!: boolean;
+
+  @IsOptional()
+  @IsString()
+  txHash?: string;
 }
 
 export class CreateLayawayDto {
   @IsString()
   listingId!: string;
 
+  @IsOptional()
   @IsString()
-  buyerId!: string;
+  buyerId?: string;
 
   @IsNumber()
   @IsPositive()
   downPayment!: number;
 
   @IsInt()
+  @IsIn([3, 6, 9, 12], { message: 'Only 3, 6, 9, or 12 months allowed' })
   monthsDuration!: number;
+
+  @IsOptional()
+  @IsString()
+  txHash?: string;
 }
 
 export class PayLayawayDto {
+  @IsOptional()
   @IsNumber()
   @IsPositive()
-  amount!: number;
+  amount?: number;
+
+  @IsOptional()
+  @IsString()
+  txHash?: string;
 }
 
 export class CreateDisputeDto {
   @IsString()
   assetId!: string;
 
+  @IsOptional()
   @IsString()
-  openedBy!: string;
+  openedBy?: string;
 
   @IsString()
   evidenceExportUri!: string;
@@ -194,5 +218,48 @@ export class CreateUserDto {
 export class DemoLoginDto {
   @IsEnum(UserRole)
   role!: UserRole;
+
+  @IsOptional()
+  @IsString()
+  userId?: string;
+}
+
+export class FractionalizeAssetDto {
+  @IsString()
+  assetId!: string;
+
+  @IsInt()
+  @IsPositive()
+  totalShares!: number;
+
+  @IsNumber()
+  @IsPositive()
+  targetPrice!: number;
+
+  @IsOptional()
+  @IsString()
+  txHash?: string;
+}
+
+export class BuyFractionsDto {
+  @IsString()
+  assetId!: string;
+
+  @IsInt()
+  @IsPositive()
+  sharesToBuy!: number;
+
+  @IsOptional()
+  @IsString()
+  txHash?: string;
+}
+
+export class RedeemAssetDto {
+  @IsString()
+  assetId!: string;
+
+  @IsOptional()
+  @IsString()
+  txHash?: string;
 }
 

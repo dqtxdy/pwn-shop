@@ -55,7 +55,14 @@ export enum LoanStatus {
 export enum ListingStatus {
   Active = 'ACTIVE',
   Sold = 'SOLD',
-  Cancelled = 'CANCELLED'
+  Cancelled = 'CANCELLED',
+  Reserved = 'RESERVED'
+}
+
+export enum LayawayStatus {
+  Active = 'ACTIVE',
+  Completed = 'COMPLETED',
+  Forfeited = 'FORFEITED'
 }
 
 export enum DisputeStatus {
