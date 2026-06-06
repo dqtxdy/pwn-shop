@@ -34,7 +34,7 @@ async function main() {
       console.error(
         `\n[ERROR] Anvil is not running at ${ANVIL_RPC}.\n` +
         `Start it first with:\n` +
-        `/home/respectthanh/.foundry/bin/anvil --host 0.0.0.0\n`
+        `anvil --host 0.0.0.0\n`
       );
     } else {
       console.error(`[RESET] Failed to reset Anvil: ${err.message}`);

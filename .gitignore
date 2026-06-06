@@ -16,6 +16,7 @@ coverage/
 # Environment files
 .env
 .env.*
+!/apps/api/.env.example
 
 # Logs
 *.log
