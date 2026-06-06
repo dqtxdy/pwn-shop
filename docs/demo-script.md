@@ -17,11 +17,10 @@ This node runs locally at `http://127.0.0.1:8545` with chain ID `31337` and pre-
 
 ## Step 2: Deploy the Smart Contracts
 
-In the `PawnShop-SmartContract` directory, execute the deployment script. Specify the RPC URL and broadcast flags:
+From the repository root, run the bounded local deploy runner:
 
 ```bash
-cd PawnShop-SmartContract
-/home/respectthanh/.foundry/bin/forge script script/DeployPawnProtocol.s.sol --rpc-url http://127.0.0.1:8545 --broadcast
+npm run deploy:local
 ```
 
 Upon successful completion, this script will:

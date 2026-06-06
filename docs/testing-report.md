@@ -54,7 +54,9 @@ We updated and expanded the test suite in the backend API and frontend web clien
 ### Smart Contracts (Foundry)
 Run smart contract tests:
 ```bash
-/home/respectthanh/.foundry/bin/forge test
+cd PawnShop-SmartContract
+forge test
+cd ..
 ```
 **Output:** `Ran 8 test suites: 19 tests passed, 0 failed` (All tests including `PawnFractionalTest` pass successfully).
 
@@ -89,7 +91,7 @@ Tests:       24 passed, 24 total
 ```
 
 > [!IMPORTANT]
-> **Running Smoke Tests:** The local Anvil node must be running in the background before executing `npm run test:smoke`. You can start it with: `/home/respectthanh/.foundry/bin/anvil --host 0.0.0.0`.
+> **Running Smoke Tests:** The local Anvil node must be running in the background before executing `npm run test:smoke`. You can start it with: `anvil --host 0.0.0.0`.
 
 To run the live integration smoke tests deterministically on Anvil (which redeploys the smart contracts to reset state and runs the smoke suite):
 ```bash

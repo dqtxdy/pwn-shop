@@ -1,121 +1,309 @@
-# Physical Asset Pawnshop System
+# Blockchain-Enabled Physical Asset Pawnshop System
 
-A secure, blockchain-enabled physical asset pawnshop system featuring clean architecture, NestJS backend API, React frontend client, and solidity-based pawn contract integration.
+Capstone project for Introduction to Software Engineering.
 
----
+This repository implements a production-like pawnshop workflow for physical assets:
+customers submit collateral, staff validate and appraise it, loans and repayments can be
+settled on a local EVM chain, and marketplace, layaway, and fractionalization flows are
+available for demo and testing.
 
-## Getting Started
+The application is built to demonstrate both software-engineering structure and blockchain
+integration:
 
-### 1. Installation
+- `apps/api` - NestJS backend with controllers, DTOs, services, guards, repositories, and
+  infrastructure adapters.
+- `apps/web` - React + TypeScript frontend.
+- `PawnShop-SmartContract` - Foundry smart contracts and local deployment scripts.
+- `docs` - architecture notes, testing report, traceability, and presentation script.
 
-Install all workspace and contract dependencies:
+## Prerequisites
+
+Install these before running the full project:
+
+- Node.js and npm
+- Foundry, with `forge` and `anvil` available on your `PATH`
+- Docker, only if you want PostgreSQL persistence
+- MetaMask, only if you want to manually sign Local Anvil transactions in the browser
+
+Do not hardcode a personal Foundry installation path in documentation or scripts. If `forge`
+or `anvil` is not found, install Foundry or add your Foundry `bin` directory to `PATH`.
+
+## Install
+
+From the repository root:
+
 ```bash
 npm install
-cd PawnShop-SmartContract && /home/respectthanh/.foundry/bin/forge build
 ```
 
----
+Compile the Solidity contracts:
 
-## Run & Persistence Modes
-
-The backend architecture implements the **Dependency Inversion Principle (DIP)** (the "D" in SOLID) via repository polymorphism, isolating core business logic from direct database engine dependencies. The service layer interacts only with the abstract `PawnRepository` port interface, allowing hot-swapping between memory and database engines.
-
-Select your mode of operation by setting environment variables in the `.env` file (or passing them dynamically):
-
-### Mode A: Memory Mode (Default / Developer Sandbox)
-Perfect for offline local runs and fast unit test runs. No external database or blockchain node is required.
-```env
-PERSISTENCE_MODE=memory
-BLOCKCHAIN_MODE=mock
-```
-To run the mock backend and mock web frontend:
 ```bash
-# Start backend API (Memory mode)
-npm run dev:api
+cd PawnShop-SmartContract
+forge build
+cd ..
+```
 
-# Start web client (Mock blockchain mode)
+## Environment
+
+The API process runs from the `apps/api` workspace, so the backend environment file belongs
+there:
+
+```bash
+cp apps/api/.env.example apps/api/.env
+```
+
+The backend defaults to:
+
+- API: `http://localhost:3000/api`
+- Web origin: `http://localhost:5173`
+- Persistence: in-memory
+- Blockchain: mock adapter
+
+The frontend defaults to `http://localhost:3000/api` without an env file. If you change the
+API port, create `apps/web/.env.local` and set:
+
+```bash
+VITE_API_BASE_URL=http://localhost:<api-port>/api
+```
+
+## Run Mode Overview
+
+| Mode | Persistence | Blockchain | Use this when |
+| --- | --- | --- | --- |
+| Mock demo | In-memory | Mock adapter | You want the fastest UI demo with no database or chain. |
+| Postgres demo | PostgreSQL | Mock adapter | You want real database persistence without blockchain signing. |
+| Local Anvil demo | In-memory or PostgreSQL | Local EVM contracts | You want real wallet-signed contract transactions. |
+
+The two switches are independent:
+
+- `PERSISTENCE_MODE=memory` or `PERSISTENCE_MODE=postgres`
+- `BLOCKCHAIN_MODE=mock` or `BLOCKCHAIN_MODE=anvil`
+
+## Run The Default Mock Demo
+
+This is the easiest mode for presentation rehearsal.
+
+Terminal 1:
+
+```bash
+npm run dev:api
+```
+
+Terminal 2:
+
+```bash
 npm run dev:web
 ```
 
-### Mode B: PostgreSQL Mode (Production-Grade Persistence)
-Uses local PostgreSQL for persistent record-keeping. Schemas are automatically synced for developer convenience.
+Open:
 
-> [!NOTE]
-> Docker Desktop/Docker Engine is required for Postgres validation. If Docker is unavailable, default API tests will skip the Postgres integration tests honestly.
-
-1. Start the PostgreSQL container service:
-   ```bash
-   npm run db:up
-   ```
-2. Update the `.env` configuration:
-   ```env
-   PERSISTENCE_MODE=postgres
-   DB_HOST=localhost
-   DB_PORT=5432
-   DB_USERNAME=postgres
-   DB_PASSWORD=postgres
-   DB_DATABASE=pwn_shop
-   ```
-3. Run the backend as usual. Schema generation and demo seeds occur automatically on startup.
-
----
-
-## Blockchain Modes & Smoke Tests
-
-The application supports two blockchain gateway implementations selected via the `BLOCKCHAIN_MODE` environment variable.
-
-### 1. Mock Mode (Default)
-All smart-contract interactions are simulated off-chain for rapid UI development and standard unit test suites.
-```env
-BLOCKCHAIN_MODE=mock
+```text
+http://localhost:5173
 ```
 
-### 2. Local Anvil Mode (On-Chain Validation)
-Runs against a local Foundry Anvil network node to execute real smart-contract operations (loan creation, layaways, fractionalization).
+In this mode, the API uses an in-memory repository and the blockchain adapter returns demo
+transaction responses. No Anvil node, MetaMask setup, or PostgreSQL container is required.
 
-#### Running the Smoke Tests:
-1. Start the Anvil blockchain node first:
-   ```bash
-   /home/respectthanh/.foundry/bin/anvil --host 0.0.0.0
-   ```
-2. In another terminal, run the deterministic smoke test execution suite:
-   ```bash
-   npm run test:smoke
-   ```
-   *Note: This automatically resets the Anvil node state, deploys contracts, and runs the Jest integration suite.*
+## Run With PostgreSQL Persistence
 
----
+Start the local database:
 
-## Validation & Verification Command Lines
+```bash
+npm run db:up
+```
 
-Use these commands to verify type safety and run the testing suite:
+Set these values in `apps/api/.env`:
 
-### Backend API
-- **Typecheck:** `npm --workspace apps/api run typecheck`
-- **Unit & Integration Tests:** `npm --workspace apps/api test`
-- **Postgres Integration Tests (Opt-In):**
-  Start the DB service and run the Postgres test suite:
-  ```bash
-  npm run db:up
-  npm run test:postgres
-  ```
-  **Expected Output:**
-  ```text
-  PASS test/pawn-repository.spec.ts
-    PawnRepository Contract Tests
-      InMemoryPawnRepository
-        ✓ should save and find a user by wallet (2 ms)
-        ...
-      PostgresPawnRepository
-        ✓ should save and find a user by wallet (67 ms)
-        ...
-  ```
+```bash
+PERSISTENCE_MODE=postgres
+DB_HOST=localhost
+DB_PORT=5432
+DB_USERNAME=postgres
+DB_PASSWORD=postgres
+DB_DATABASE=pwn_shop
+```
 
-### Smart Contracts
-- **Build:** `cd PawnShop-SmartContract && /home/respectthanh/.foundry/bin/forge build`
-- **Test:** `cd PawnShop-SmartContract && /home/respectthanh/.foundry/bin/forge test`
+Start the app:
 
-### Frontend Web Client
-- **Build:** `npm --workspace apps/web run build`
-- **Unit Tests:** `npm --workspace apps/web test`
-- **E2E Playwright Tests:** `npm --workspace apps/web run test:e2e`
+```bash
+npm run dev:api
+npm run dev:web
+```
+
+Run the repository contract tests against PostgreSQL:
+
+```bash
+npm run test:postgres
+```
+
+Stop the database:
+
+```bash
+npm run db:down
+```
+
+The PostgreSQL implementation is intentionally behind the same repository interface as the
+in-memory implementation. This is part of the OOP and DIP story: services depend on the
+`PawnRepository` port, not directly on TypeORM.
+
+## Run With Real Local Anvil Blockchain
+
+Use this mode when you want real local EVM transactions for loans, repayments, marketplace
+listing, layaway, installment completion, and fractionalization.
+
+Terminal 1 - start Anvil:
+
+```bash
+anvil --host 0.0.0.0
+```
+
+Terminal 2 - deploy the local protocol:
+
+```bash
+npm run deploy:local
+```
+
+This writes the local deployment artifact used by the API:
+
+```text
+PawnShop-SmartContract/deployments/local-anvil.json
+```
+
+Terminal 3 - start the API in Anvil mode:
+
+```bash
+BLOCKCHAIN_MODE=anvil npm run dev:api
+```
+
+Terminal 4 - start the web app:
+
+```bash
+npm run dev:web
+```
+
+Open:
+
+```text
+http://localhost:5173
+```
+
+Check blockchain wiring:
+
+```bash
+curl http://localhost:3000/api/blockchain/config
+curl http://localhost:3000/api/blockchain/health
+```
+
+### MetaMask Setup For Local Anvil
+
+Add a custom network:
+
+- RPC URL: `http://127.0.0.1:8545`
+- Chain ID: `31337`
+- Currency symbol: `ETH`
+
+Import the local demo wallets from Anvil. These are public development keys and must never be
+used outside a local test chain.
+
+| Demo user | Address | Private key |
+| --- | --- | --- |
+| Customer seller | `0x70997970C51812dc3A010C7d01b50e0d17dc79C8` | `0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d` |
+| Customer buyer | `0x90F79bf6EB2c4f870365E785982E1f101E93b906` | `0x7c852118294e51e653712a81e05800f419141751be58f605c371e15141b007a6` |
+
+The frontend checks that the connected wallet matches the active demo session before sending
+Anvil transactions.
+
+## Blockchain Mode Behavior
+
+Mock mode:
+
+- No chain is required.
+- The backend uses `MockBlockchainGateway`.
+- Workflows remain deterministic and fast for UI tests.
+- This is the default mode.
+
+Anvil mode:
+
+- A local Anvil node is required.
+- The backend uses `AnvilBlockchainGateway`.
+- Contract addresses are loaded from `PawnShop-SmartContract/deployments/local-anvil.json`.
+- Wallet actions are returned to the frontend for MetaMask signing.
+- Receipts are verified by the backend before state is updated.
+
+Implemented on-chain flows in Anvil mode:
+
+- Staff appraisal publication
+- Customer loan acceptance
+- Loan repayment
+- Customer consignment marketplace listing
+- Layaway purchase
+- Layaway installment completion
+- Asset fractionalization, fraction purchase, and redemption
+
+## Validation Commands
+
+Backend:
+
+```bash
+npm --workspace apps/api run typecheck
+npm --workspace apps/api test
+```
+
+Frontend:
+
+```bash
+npm --workspace apps/web run build
+npm --workspace apps/web test
+npm --workspace apps/web run test:e2e
+```
+
+Smart contracts:
+
+```bash
+cd PawnShop-SmartContract
+forge build
+forge test
+cd ..
+```
+
+Deterministic Local Anvil smoke test:
+
+```bash
+npm run test:smoke
+```
+
+`npm run test:smoke` expects Anvil to be running. It resets the local chain, deploys the
+protocol, and runs the end-to-end blockchain smoke suite.
+
+PostgreSQL contract test:
+
+```bash
+npm run db:up
+npm run test:postgres
+```
+
+## Architecture Notes
+
+The backend is the main OOP demonstration surface:
+
+- Controllers expose API operations.
+- DTOs validate incoming request data.
+- Services coordinate business workflows.
+- Domain models describe the core pawnshop concepts.
+- Repositories abstract persistence.
+- Infrastructure adapters abstract blockchain, KYC, logistics, storage, notifications, and
+  pricing.
+- Guards enforce JWT authentication and role-based authorization.
+
+The smart contracts are treated as bounded settlement components. They are not the whole
+backend; the NestJS application remains responsible for orchestration, authorization,
+off-chain evidence, persistence, and workflow state.
+
+## Useful Docs
+
+- Demo script: `docs/demo-script.md`
+- Testing report: `docs/testing-report.md`
+- Architecture notes: `docs/architecture/README.md`
+- Requirement traceability: `docs/architecture/traceability.md`
+- Development walkthrough: `walkthrough.md`
