@@ -49,7 +49,7 @@ export default defineConfig({
   ],
   webServer: [
     {
-      command: 'npm run dev:api --prefix ../..',
+      command: 'DEMO_MODE=true npm run dev:api --prefix ../..',
       port: 3000,
       reuseExistingServer: !process.env.CI,
       stdout: 'pipe',

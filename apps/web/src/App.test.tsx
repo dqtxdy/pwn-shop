@@ -226,14 +226,9 @@ describe('App', () => {
       expect(body.declaredValue).toBe(1500);
     });
 
-    // Verify /evidence POST call
-    await waitFor(() => {
-      const evidenceCall = mockFetch.mock.calls.find((call) => call[0].endsWith('/evidence'));
-      expect(evidenceCall).toBeDefined();
-      const body = JSON.parse(evidenceCall![1].body);
-      expect(body.assetId).toBe('A-1002');
-      expect(body.kind).toBe('CUSTOMER_PRE_SHIPMENT');
-    });
+    // No file was selected, so the UI must not fabricate evidence.
+    const evidenceCall = mockFetch.mock.calls.find((call) => call[0].endsWith('/evidence'));
+    expect(evidenceCall).toBeUndefined();
   });
 
   it('lists returned asset for sale and calls the marketplace/listings API', async () => {

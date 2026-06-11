@@ -30,6 +30,14 @@ import { api } from './api';
 import type { Asset, Listing, Layaway, PawnDashboard, AssetStatus, DemoSession, BlockchainConfig, BlockchainHealth, FractionalAsset, FractionalPosition } from './api';
 import { useAccount, useSendTransaction, useWriteContract, usePublicClient } from 'wagmi';
 import { workflowSteps } from './mockData';
+import {
+  formatId,
+  getStatusIndicator,
+  pageLabelMap,
+  roleLabels,
+  roleSelectOptions,
+  workspaceHomeHref
+} from './workspaceConfig';
 
 type AppProps = {
   walletButton: ReactNode;
@@ -43,76 +51,12 @@ type NotificationItem = {
   onDismiss: () => void;
 };
 
-const roleLabels: Record<DemoSession['role'], string> = {
-  CUSTOMER: 'Customer Workspace',
-  STAFF: 'Validator Workspace',
-  ADMIN: 'Admin Workspace'
-};
-
-const roleSelectOptions = [
-  { label: 'Demo Customer Seller', value: 'customer-1' },
-  { label: 'Demo Customer Buyer', value: 'customer-2' },
-  { label: 'Demo Staff / Validator', value: 'STAFF' },
-  { label: 'Demo Admin', value: 'ADMIN' }
-];
-
-const workspaceHomeHref: Record<DemoSession['role'], string> = {
-  CUSTOMER: '#overview',
-  STAFF: '#work-queue',
-  ADMIN: '#admin-overview'
-};
-
-const pageLabelMap: Record<string, string> = {
-  '#overview': 'Overview',
-  '#new-pawn': 'New Pawn Request',
-  '#my-assets': 'My Assets and Loans',
-  '#marketplace': 'Marketplace',
-  '#fractions': 'Fractions',
-  '#evidence': 'Evidence and Shipments',
-  '#work-queue': 'Work Queue',
-  '#intake-evidence': 'Intake Evidence',
-  '#appraisals': 'Appraisals',
-  '#offer-drafting': 'Offer Drafting',
-  '#admin-overview': 'Overview',
-  '#audit-events': 'Audit Events',
-  '#risk-parameters': 'Risk Parameters',
-  '#protocol-treasury': 'Protocol Treasury',
-  '#system-adapters': 'System Adapters'
-};
-
-// Map asset status to human-readable labels and status indicator types
-const getStatusIndicator = (status: AssetStatus) => {
-  switch (status) {
-    case 'DRAFT':
-      return <StatusIndicator type="info">Draft</StatusIndicator>;
-    case 'AWAITING_SHIPMENT':
-      return <StatusIndicator type="warning">Awaiting Shipment</StatusIndicator>;
-    case 'IN_TRANSIT':
-      return <StatusIndicator type="in-progress">In Transit</StatusIndicator>;
-    case 'RECEIVED':
-      return <StatusIndicator type="info">Received</StatusIndicator>;
-    case 'UNDER_APPRAISAL':
-      return <StatusIndicator type="in-progress">Under Appraisal</StatusIndicator>;
-    case 'OFFER_ISSUED':
-      return <StatusIndicator type="success">Offer Issued</StatusIndicator>;
-    case 'LOAN_ACTIVE':
-      return <StatusIndicator type="success">Loan Active</StatusIndicator>;
-    case 'RETURNED':
-      return <StatusIndicator type="stopped">Returned</StatusIndicator>;
-    case 'LISTED':
-      return <StatusIndicator type="success">Listed</StatusIndicator>;
-    case 'FRACTIONALIZED':
-      return <StatusIndicator type="success">Fractionalized</StatusIndicator>;
-    case 'DISPUTED':
-      return <StatusIndicator type="error">Disputed</StatusIndicator>;
-    default:
-      return <StatusIndicator type="info">{status}</StatusIndicator>;
-  }
-};
-
-const formatId = (id: string) => {
-  return id.length > 8 ? `${id.slice(0, 8)}...` : id;
-};
+const CONNECT_WALLET_MESSAGE = 'Connect MetaMask first.';
+const WALLET_MISMATCH_MESSAGE = 'Switch MetaMask to the active demo wallet.';
+const WALLET_CLIENT_MESSAGE = 'Wallet client is not ready.';
+const SERVER_CONFIRMATION_MESSAGE = 'Confirming with server.';
+const txSubmittedMessage = (label: string, txHash: string) =>
+  `${label} submitted. Waiting for confirmation (${txHash.slice(0, 10)}...).`;
 
 export default function App({ walletButton }: AppProps) {
   const { address: connectedAddress, isConnected } = useAccount();
@@ -141,7 +85,7 @@ export default function App({ walletButton }: AppProps) {
     const q = query.toLowerCase().trim();
     if (!q) return;
     if (q.length < 2) {
-      addNotification('warning', 'Please enter a search term with at least 2 characters');
+      addNotification('warning', 'Enter at least 2 characters');
       return;
     }
     if (!dashboard) return;
@@ -240,15 +184,15 @@ export default function App({ walletButton }: AppProps) {
 
     if (blockchainConfig?.mode === 'anvil') {
       if (!isConnected || !connectedAddress) {
-        addNotification('error', 'Please connect your Web3 wallet (MetaMask) using the Connect button first.');
+        addNotification('error', CONNECT_WALLET_MESSAGE);
         return;
       }
       if (connectedAddress.toLowerCase() !== session.walletAddress?.toLowerCase()) {
-        addNotification('error', `Connected wallet does not match active demo session wallet. Please switch accounts in MetaMask.`);
+        addNotification('error', WALLET_MISMATCH_MESSAGE);
         return;
       }
       if (!publicClient) {
-        addNotification('error', 'Public client not initialized. Cannot wait for transaction receipts.');
+        addNotification('error', WALLET_CLIENT_MESSAGE);
         return;
       }
     }
@@ -267,17 +211,17 @@ export default function App({ walletButton }: AppProps) {
         if (response && 'status' in response && response.status === 'AWAITING_WALLET_EXECUTION') {
           const { actions } = response;
           if (!actions || actions.length < 2) {
-            throw new Error('Invalid actions payload received from server');
+            throw new Error('Wallet action is invalid');
           }
 
-          addNotification('info', 'Please sign the ERC721 Approve transaction in your wallet...');
+          addNotification('info', 'Sign NFT approval.');
           const approveHash = await sendTransactionAsync({
             to: actions[0].to as `0x${string}`,
             data: actions[0].calldata as `0x${string}`
           });
           addNotification('info', `Approval transaction submitted! waiting for confirmation (Tx: ${approveHash.slice(0, 10)}...)...`);
           await publicClient!.waitForTransactionReceipt({ hash: approveHash });
-          addNotification('success', 'Approval confirmed! Please sign the Fractionalize transaction in your wallet...');
+          addNotification('success', 'Approval confirmed. Sign fractionalization.');
 
           const fracHash = await sendTransactionAsync({
             to: actions[1].to as `0x${string}`,
@@ -301,7 +245,7 @@ export default function App({ walletButton }: AppProps) {
           targetPrice
         });
       }
-      addNotification('success', 'Asset fractionalized successfully!');
+      addNotification('success', 'Asset fractionalized.');
       await loadData();
     } catch (err: any) {
       addNotification('error', err.message || 'Failed to fractionalize asset');
@@ -326,15 +270,15 @@ export default function App({ walletButton }: AppProps) {
 
     if (blockchainConfig?.mode === 'anvil') {
       if (!isConnected || !connectedAddress) {
-        addNotification('error', 'Please connect your Web3 wallet (MetaMask) using the Connect button first.');
+        addNotification('error', CONNECT_WALLET_MESSAGE);
         return;
       }
       if (connectedAddress.toLowerCase() !== session.walletAddress?.toLowerCase()) {
-        addNotification('error', `Connected wallet does not match active demo session wallet. Please switch accounts in MetaMask.`);
+        addNotification('error', WALLET_MISMATCH_MESSAGE);
         return;
       }
       if (!publicClient) {
-        addNotification('error', 'Public client not initialized. Cannot wait for transaction receipts.');
+        addNotification('error', WALLET_CLIENT_MESSAGE);
         return;
       }
     }
@@ -352,17 +296,17 @@ export default function App({ walletButton }: AppProps) {
         if (response && 'status' in response && response.status === 'AWAITING_WALLET_EXECUTION') {
           const { actions } = response;
           if (!actions || actions.length < 2) {
-            throw new Error('Invalid actions payload received from server');
+            throw new Error('Wallet action is invalid');
           }
 
-          addNotification('info', 'Please sign the ERC20 Approve transaction in your wallet...');
+          addNotification('info', 'Sign token approval.');
           const approveHash = await sendTransactionAsync({
             to: actions[0].to as `0x${string}`,
             data: actions[0].calldata as `0x${string}`
           });
           addNotification('info', `Approval transaction submitted! waiting for confirmation (Tx: ${approveHash.slice(0, 10)}...)...`);
           await publicClient!.waitForTransactionReceipt({ hash: approveHash });
-          addNotification('success', 'Approval confirmed! Please sign the Buy Fractions transaction in your wallet...');
+          addNotification('success', 'Approval confirmed. Sign fraction purchase.');
 
           const buyHash = await sendTransactionAsync({
             to: actions[1].to as `0x${string}`,
@@ -384,7 +328,7 @@ export default function App({ walletButton }: AppProps) {
           sharesToBuy
         });
       }
-      addNotification('success', 'Fractions purchased successfully!');
+      addNotification('success', 'Fractions purchased.');
       await loadData();
     } catch (err: any) {
       addNotification('error', err.message || 'Failed to buy fractions');
@@ -398,15 +342,15 @@ export default function App({ walletButton }: AppProps) {
 
     if (blockchainConfig?.mode === 'anvil') {
       if (!isConnected || !connectedAddress) {
-        addNotification('error', 'Please connect your Web3 wallet (MetaMask) using the Connect button first.');
+        addNotification('error', CONNECT_WALLET_MESSAGE);
         return;
       }
       if (connectedAddress.toLowerCase() !== session.walletAddress?.toLowerCase()) {
-        addNotification('error', `Connected wallet does not match active demo session wallet. Please switch accounts in MetaMask.`);
+        addNotification('error', WALLET_MISMATCH_MESSAGE);
         return;
       }
       if (!publicClient) {
-        addNotification('error', 'Public client not initialized. Cannot wait for transaction receipts.');
+        addNotification('error', WALLET_CLIENT_MESSAGE);
         return;
       }
     }
@@ -422,10 +366,10 @@ export default function App({ walletButton }: AppProps) {
         if (response && 'status' in response && response.status === 'AWAITING_WALLET_EXECUTION') {
           const { actions } = response;
           if (!actions || actions.length < 1) {
-            throw new Error('Invalid actions payload received from server');
+            throw new Error('Wallet action is invalid');
           }
 
-          addNotification('info', 'Please sign the Redeem Asset transaction in your wallet...');
+          addNotification('info', 'Sign redemption.');
           const redeemHash = await sendTransactionAsync({
             to: actions[0].to as `0x${string}`,
             data: actions[0].calldata as `0x${string}`
@@ -444,7 +388,7 @@ export default function App({ walletButton }: AppProps) {
           assetId
         });
       }
-      addNotification('success', 'Asset redeemed successfully!');
+      addNotification('success', 'Asset redeemed.');
       await loadData();
     } catch (err: any) {
       addNotification('error', err.message || 'Failed to redeem asset');
@@ -719,38 +663,23 @@ export default function App({ walletButton }: AppProps) {
         declaredValue: Number(pawnDeclaredValue)
       });
 
-      // 2. Upload Evidence (Base64 file payload as required)
-      if (selectedFiles.length > 0) {
-        for (const file of selectedFiles) {
-          try {
-            const base64 = await fileToBase64(file);
-            await api.uploadEvidence({
-              assetId: newAsset.id,
-              kind: 'CUSTOMER_PRE_SHIPMENT',
-              fileName: file.name,
-              bytesBase64: base64
-            });
-          } catch (err) {
-            console.error('File conversion failed, falling back to mock evidence payload', err);
-            await api.uploadEvidence({
-              assetId: newAsset.id,
-              kind: 'CUSTOMER_PRE_SHIPMENT',
-              fileName: file.name,
-              bytesBase64: 'bW9jay1maWxlLWNvbnRlbnQ='
-            });
-          }
-        }
-      } else {
-        // Fallback mock evidence upload if no file is chosen
+      // 2. Upload evidence only when the customer provided real files.
+      for (const file of selectedFiles) {
+        const base64 = await fileToBase64(file);
         await api.uploadEvidence({
           assetId: newAsset.id,
           kind: 'CUSTOMER_PRE_SHIPMENT',
-          fileName: 'pre_shipment_receipt.jpg',
-          bytesBase64: 'bW9jay1maWxlLWNvbnRlbnQ='
+          fileName: file.name,
+          bytesBase64: base64
         });
       }
 
-      addNotification('success', `Asset "${pawnTitle}" submitted successfully!`);
+      addNotification(
+        'success',
+        selectedFiles.length > 0
+          ? `Asset "${pawnTitle}" submitted with evidence.`
+          : `Asset "${pawnTitle}" submitted. Add evidence before shipment.`
+      );
 
       // Reset pawn form fields
       setPawnTitle('');
@@ -781,7 +710,7 @@ export default function App({ walletButton }: AppProps) {
         carrier: 'FedEx',
         codRequired: false
       });
-      addNotification('success', 'Shipment created and tracking registered!');
+      addNotification('success', 'Shipment created. Tracking registered.');
       await loadData();
     } catch (err: any) {
       addNotification('error', err.message || 'Failed to create shipment');
@@ -798,15 +727,15 @@ export default function App({ walletButton }: AppProps) {
 
     if (blockchainConfig?.mode === 'anvil') {
       if (!isConnected || !connectedAddress) {
-        addNotification('error', 'Please connect your Web3 wallet (MetaMask) using the Connect button first.');
+        addNotification('error', CONNECT_WALLET_MESSAGE);
         return;
       }
       if (connectedAddress.toLowerCase() !== session.walletAddress.toLowerCase()) {
-        addNotification('error', `Connected wallet (${connectedAddress.slice(0, 6)}...) does not match your active demo session wallet (${session.walletAddress.slice(0, 6)}...). Please switch accounts in MetaMask.`);
+        addNotification('error', WALLET_MISMATCH_MESSAGE);
         return;
       }
       if (!publicClient) {
-        addNotification('error', 'Public client not initialized. Cannot wait for transaction receipts.');
+        addNotification('error', WALLET_CLIENT_MESSAGE);
         return;
       }
     }
@@ -821,17 +750,17 @@ export default function App({ walletButton }: AppProps) {
         if (response && 'status' in response && response.status === 'AWAITING_WALLET_EXECUTION') {
           const { actions } = response;
           if (!actions || actions.length < 2) {
-            throw new Error('Invalid actions payload received from server');
+            throw new Error('Wallet action is invalid');
           }
 
-          addNotification('info', 'Please sign the ERC721 Approve transaction in your wallet...');
+          addNotification('info', 'Sign NFT approval.');
           const approveHash = await sendTransactionAsync({
             to: actions[0].to as `0x${string}`,
             data: actions[0].calldata as `0x${string}`
           });
           addNotification('info', `Approval transaction submitted! waiting for confirmation (Tx: ${approveHash.slice(0, 10)}...)...`);
           await publicClient!.waitForTransactionReceipt({ hash: approveHash });
-          addNotification('success', 'Approval confirmed! Please sign the Create Loan transaction in your wallet...');
+          addNotification('success', 'Approval confirmed. Sign loan creation.');
 
           const loanHash = await sendTransactionAsync({
             to: actions[1].to as `0x${string}`,
@@ -851,7 +780,7 @@ export default function App({ walletButton }: AppProps) {
           borrowerWallet: session.walletAddress
         });
       }
-      addNotification('success', 'Loan accepted! principal amount disbursed.');
+      addNotification('success', 'Loan accepted. Principal disbursed.');
       await loadData();
     } catch (err: any) {
       addNotification('error', err.message || 'Failed to accept loan');
@@ -871,31 +800,31 @@ export default function App({ walletButton }: AppProps) {
       return;
     }
     if (!selectedAsset) {
-      addNotification('warning', 'Please select an asset with an active loan from the table first.');
+      addNotification('warning', 'Select an active-loan asset first.');
       return;
     }
     const loan = dashboard?.loans.find((l) => l.assetId === selectedAsset.id && l.status === 'ACTIVE');
     if (!loan) {
-      addNotification('error', 'No active loan found for the selected asset.');
+      addNotification('error', 'Selected asset has no active loan.');
       return;
     }
 
     const client = publicClient;
     if (blockchainConfig?.mode === 'anvil') {
       if (!isConnected || !connectedAddress) {
-        addNotification('error', 'Please connect your Web3 wallet (MetaMask) using the Connect button first.');
+        addNotification('error', CONNECT_WALLET_MESSAGE);
         return;
       }
       if (connectedAddress.toLowerCase() !== walletAddress.toLowerCase()) {
-        addNotification('error', `Connected wallet (${connectedAddress.slice(0, 6)}...) does not match your active demo session wallet (${walletAddress.slice(0, 6)}...). Please switch accounts in MetaMask.`);
+        addNotification('error', WALLET_MISMATCH_MESSAGE);
         return;
       }
       if (!selectedAsset.tokenId) {
-        addNotification('error', `Selected asset ${selectedAsset.id} does not have a mapped token ID.`);
+        addNotification('error', `Selected asset ${selectedAsset.id} has no token ID mapping.`);
         return;
       }
       if (!client) {
-        addNotification('error', 'Public client not initialized. Cannot wait for transaction receipts.');
+        addNotification('error', WALLET_CLIENT_MESSAGE);
         return;
       }
     }
@@ -905,13 +834,13 @@ export default function App({ walletButton }: AppProps) {
       let txHash = '';
       if (blockchainConfig?.mode === 'anvil') {
         if (!client) {
-          throw new Error('Public client not initialized. Cannot wait for transaction receipts.');
+          throw new Error(WALLET_CLIENT_MESSAGE);
         }
         const tokenId = parseInt(selectedAsset.tokenId!, 10);
         const principalWei = BigInt(Math.floor(loan.principal)) * 10n**18n;
         const approvalAmount = principalWei * 2n;
 
-        addNotification('info', 'Please sign the ERC20 Approve transaction for repayment...');
+        addNotification('info', 'Sign token approval.');
         const approveHash = await writeContractAsync({
           address: blockchainConfig.paymentTokenAddress as `0x${string}`,
           abi: [
@@ -934,7 +863,7 @@ export default function App({ walletButton }: AppProps) {
         });
         addNotification('info', `ERC20 Approve submitted! waiting for confirmation (Tx: ${approveHash.slice(0, 10)}...)...`);
         await client.waitForTransactionReceipt({ hash: approveHash });
-        addNotification('success', 'ERC20 Approve confirmed! Please sign the Repay Pawn transaction in your wallet...');
+        addNotification('success', 'Approval confirmed. Sign repayment.');
 
         const repayHash = await writeContractAsync({
           address: blockchainConfig.pawnProtocolAddress as `0x${string}`,
@@ -963,7 +892,7 @@ export default function App({ walletButton }: AppProps) {
         amount: loan.principal,
         txHash: txHash
       });
-      addNotification('success', 'Loan fully repaid! Asset collateral released.');
+      addNotification('success', 'Loan repaid. Collateral released.');
       setSelectedAsset(null);
       await loadData();
     } catch (err: any) {
@@ -988,15 +917,15 @@ export default function App({ walletButton }: AppProps) {
 
     if (blockchainConfig?.mode === 'anvil') {
       if (!isConnected || !connectedAddress) {
-        addNotification('error', 'Please connect your Web3 wallet (MetaMask) using the Connect button first.');
+        addNotification('error', CONNECT_WALLET_MESSAGE);
         return;
       }
       if (connectedAddress.toLowerCase() !== session.walletAddress.toLowerCase()) {
-        addNotification('error', `Connected wallet (${connectedAddress.slice(0, 6)}...) does not match your active demo session wallet (${session.walletAddress.slice(0, 6)}...). Please switch accounts in MetaMask.`);
+        addNotification('error', WALLET_MISMATCH_MESSAGE);
         return;
       }
       if (!publicClient) {
-        addNotification('error', 'Public client not initialized. Cannot wait for transaction receipts.');
+        addNotification('error', WALLET_CLIENT_MESSAGE);
         return;
       }
     }
@@ -1013,17 +942,17 @@ export default function App({ walletButton }: AppProps) {
         if (response && 'status' in response && response.status === 'AWAITING_WALLET_EXECUTION') {
           const { actions } = response;
           if (!actions || actions.length < 2) {
-            throw new Error('Invalid actions payload received from server');
+            throw new Error('Wallet action is invalid');
           }
 
-          addNotification('info', 'Please sign the NFT Approve transaction in your wallet...');
+          addNotification('info', 'Sign NFT approval.');
           const approveHash = await sendTransactionAsync({
             to: actions[0].to as `0x${string}`,
             data: actions[0].calldata as `0x${string}`
           });
           addNotification('info', `Approval transaction submitted! waiting for confirmation (Tx: ${approveHash.slice(0, 10)}...)...`);
           await publicClient!.waitForTransactionReceipt({ hash: approveHash });
-          addNotification('success', 'NFT approval confirmed! Please sign the Create Listing transaction in your wallet...');
+          addNotification('success', 'Approval confirmed. Sign listing.');
 
           const listingHash = await sendTransactionAsync({
             to: actions[1].to as `0x${string}`,
@@ -1047,7 +976,7 @@ export default function App({ walletButton }: AppProps) {
           isProtocolOwned: false
         });
       }
-      addNotification('success', 'Asset successfully listed in the Marketplace!');
+      addNotification('success', 'Asset listed.');
       setIsListModalVisible(false);
       await loadData();
     } catch (err: any) {
@@ -1070,7 +999,7 @@ export default function App({ walletButton }: AppProps) {
         fileName: 'unboxing_cam_4.mp4',
         bytesBase64: 'dW5ib3hpbmctdmlkZW8='
       });
-      addNotification('success', 'Unboxing proof recorded! Asset marked as RECEIVED.');
+      addNotification('success', 'Unboxing proof recorded. Asset received.');
       await loadData();
     } catch (err: any) {
       addNotification('error', err.message || 'Failed to upload unboxing proof');
@@ -1114,7 +1043,7 @@ export default function App({ walletButton }: AppProps) {
         durationDays: 30
       });
 
-      addNotification('success', 'Appraisal recorded and Loan Offer generated successfully!');
+      addNotification('success', 'Appraisal recorded. Loan offer created.');
       setAppraisalAssetId('');
       setAppraisalValue('');
       setAppraisalLtv('60');
@@ -1134,15 +1063,15 @@ export default function App({ walletButton }: AppProps) {
 
     if (blockchainConfig?.mode === 'anvil') {
       if (!isConnected || !connectedAddress) {
-        addNotification('error', 'Please connect your Web3 wallet (MetaMask) using the Connect button first.');
+        addNotification('error', CONNECT_WALLET_MESSAGE);
         return;
       }
       if (connectedAddress.toLowerCase() !== session.walletAddress.toLowerCase()) {
-        addNotification('error', `Connected wallet (${connectedAddress.slice(0, 6)}...) does not match your active demo session wallet (${session.walletAddress.slice(0, 6)}...). Please switch accounts in MetaMask.`);
+        addNotification('error', WALLET_MISMATCH_MESSAGE);
         return;
       }
       if (!publicClient) {
-        addNotification('error', 'Public client not initialized. Cannot wait for transaction receipts.');
+        addNotification('error', WALLET_CLIENT_MESSAGE);
         return;
       }
     }
@@ -1159,17 +1088,17 @@ export default function App({ walletButton }: AppProps) {
         if (response && 'status' in response && response.status === 'AWAITING_WALLET_EXECUTION') {
           const { actions } = response;
           if (!actions || actions.length < 2) {
-            throw new Error('Invalid actions payload received from server');
+            throw new Error('Wallet action is invalid');
           }
 
-          addNotification('info', 'Please sign the ERC20 Approve transaction in your wallet...');
+          addNotification('info', 'Sign token approval.');
           const approveHash = await sendTransactionAsync({
             to: actions[0].to as `0x${string}`,
             data: actions[0].calldata as `0x${string}`
           });
           addNotification('info', `ERC20 approval submitted! waiting for confirmation (Tx: ${approveHash.slice(0, 10)}...)...`);
           await publicClient!.waitForTransactionReceipt({ hash: approveHash });
-          addNotification('success', 'ERC20 approval confirmed! Please sign the Start Layaway transaction in your wallet...');
+          addNotification('success', 'Approval confirmed. Sign layaway.');
 
           const layawayHash = await sendTransactionAsync({
             to: actions[1].to as `0x${string}`,
@@ -1193,7 +1122,7 @@ export default function App({ walletButton }: AppProps) {
           monthsDuration: 6
         });
       }
-      addNotification('success', `Layaway initiated! 20% down payment processed.`);
+      addNotification('success', `Layaway started. Down payment processed.`);
       await loadData();
     } catch (err: any) {
       addNotification('error', err.message || 'Layaway failed');
@@ -1216,21 +1145,21 @@ export default function App({ walletButton }: AppProps) {
       : installment;
 
     if (nextAmount <= 0) {
-      addNotification('error', 'No installment due — layaway may already be complete.');
+      addNotification('error', 'No installment due. Layaway may be complete.');
       return;
     }
 
     if (blockchainConfig?.mode === 'anvil') {
       if (!isConnected || !connectedAddress) {
-        addNotification('error', 'Please connect your Web3 wallet (MetaMask) using the Connect button first.');
+        addNotification('error', CONNECT_WALLET_MESSAGE);
         return;
       }
       if (connectedAddress.toLowerCase() !== session.walletAddress.toLowerCase()) {
-        addNotification('error', `Connected wallet (${connectedAddress.slice(0, 6)}...) does not match your active demo session wallet (${session.walletAddress.slice(0, 6)}...). Please switch accounts in MetaMask.`);
+        addNotification('error', WALLET_MISMATCH_MESSAGE);
         return;
       }
       if (!publicClient) {
-        addNotification('error', 'Public client not initialized. Cannot wait for transaction receipts.');
+        addNotification('error', WALLET_CLIENT_MESSAGE);
         return;
       }
     }
@@ -1250,21 +1179,21 @@ export default function App({ walletButton }: AppProps) {
             nextInstallmentAmountDisplay?: string;
           };
           if (!actions || actions.length < 2) {
-            throw new Error('Invalid actions payload received from server');
+            throw new Error('Wallet action is invalid');
           }
 
           if (nextInstallmentAmountDisplay) {
             displayAmount = nextInstallmentAmountDisplay;
           }
 
-          addNotification('info', 'Please sign the ERC20 Approve transaction in your wallet...');
+          addNotification('info', 'Sign token approval.');
           const approveHash = await sendTransactionAsync({
             to: actions[0].to as `0x${string}`,
             data: actions[0].calldata as `0x${string}`
           });
           addNotification('info', `ERC20 approval submitted! waiting for confirmation (Tx: ${approveHash.slice(0, 10)}...)...`);
           await publicClient!.waitForTransactionReceipt({ hash: approveHash });
-          addNotification('success', 'ERC20 approval confirmed! Please sign the Pay Installment transaction in your wallet...');
+          addNotification('success', 'Approval confirmed. Sign installment.');
 
           const payHash = await sendTransactionAsync({
             to: actions[1].to as `0x${string}`,
@@ -2047,7 +1976,7 @@ export default function App({ walletButton }: AppProps) {
                       Remaining balance is spread over a maximum duration of 6 months.
                     </Alert>
                     <Box className="muted-copy">
-                      Title transfers automatically upon final transaction execution through the Smart Layaway contract.
+                      Title transfers after final payment.
                     </Box>
                   </SpaceBetween>
                 </Container>
@@ -2122,12 +2051,12 @@ export default function App({ walletButton }: AppProps) {
                   <Container variant="stacked" header={<Header variant="h2">Logistics Adapter</Header>}>
                     <SpaceBetween size="s">
                       <Box className="muted-copy">
-                        Mock FedEx simulator. Dispatches tracking codes automatically and records custody handoff events.
+                        Courier adapter for tracking and custody handoff events.
                       </Box>
                       <div className="summary-grid summary-grid--single">
                         <div className="summary-item">
                           <Box variant="awsui-key-label">Adapter status</Box>
-                          <Box variant="p">Active on local Anvil</Box>
+                          <Box variant="p">Mock adapter</Box>
                         </div>
                         <div className="summary-item">
                           <Box variant="awsui-key-label">Evidence source</Box>
@@ -2484,13 +2413,13 @@ export default function App({ walletButton }: AppProps) {
                   )}
                 </Container>
 
-                <Container variant="stacked" header={<Header variant="h2">Risk Policy Guidelines</Header>}>
+                <Container variant="stacked" header={<Header variant="h2">Risk Policy</Header>}>
                   <SpaceBetween size="s">
                     <Alert header="Maximum LTV Rule" type="warning">
-                      Protocol guidelines restrict appraisals to a maximum of 70% LTV of the verified physical value.
+                      Appraisals are capped at 70% LTV.
                     </Alert>
                     <Box className="muted-copy">
-                      Interest rates are calculated at a base APR of 5% with a 30-day default duration limit. Collateral is locked automatically upon offer issuance.
+                      Base APR is 5%. Default loan duration is 30 days.
                     </Box>
                   </SpaceBetween>
                 </Container>
@@ -2530,7 +2459,7 @@ export default function App({ walletButton }: AppProps) {
               </div>
 
               <div className="two-column-layout">
-                <Container variant="stacked" header={<Header variant="h2">Generated Loan Offers & Status</Header>}>
+                <Container variant="stacked" header={<Header variant="h2">Loan Offers</Header>}>
                   <div className="demo-table-wrapper">
                     <Table
                       variant="embedded"
@@ -2565,10 +2494,10 @@ export default function App({ walletButton }: AppProps) {
                   </div>
                 </Container>
 
-                <Container variant="stacked" header={<Header variant="h2">Offer Settlement Guidelines</Header>}>
+                <Container variant="stacked" header={<Header variant="h2">Offer Settlement</Header>}>
                   <SpaceBetween size="s">
                     <Box className="muted-copy">
-                      Drafted loan offers are generated by the backend. The customer accepts terms in the application (on-chain acceptance via wallet signature is deferred to Phase 2).
+                      Staff draft the offer. In Anvil mode, the customer signs the loan transaction with their wallet.
                     </Box>
                     <div className="summary-grid summary-grid--single">
                       <div className="summary-item">
@@ -2772,7 +2701,7 @@ export default function App({ walletButton }: AppProps) {
               <Container variant="stacked" header={<Header variant="h2">Governance Authority</Header>}>
                 <SpaceBetween size="s">
                   <Box className="muted-copy">
-                    Risk parameters are set on-chain and managed by the PawnShop Protocol Admin Multisig address. Updates require a minimum quorum threshold of 2/3 signatures.
+                    Risk settings are on-chain. Updates require 2/3 multisig approval.
                   </Box>
                   <div className="summary-grid">
                     <div className="summary-item">
@@ -2816,19 +2745,25 @@ export default function App({ walletButton }: AppProps) {
               </div>
 
               <div className="two-column-layout">
-                <Container variant="stacked" header={<Header variant="h2">Treasury Smart Contract Details</Header>}>
+                <Container variant="stacked" header={<Header variant="h2">Treasury Contract</Header>}>
                   <SpaceBetween size="m">
                     <div>
                       <Box variant="awsui-key-label">Contract Address</Box>
                       <Box variant="p">
                         {blockchainConfig && blockchainConfig.mode === 'anvil' && blockchainConfig.isDeploymentArtifactLoaded
                           ? blockchainConfig.pawnProtocolAddress
-                          : "Mock mode - Not connected to deployed contract"}
+                          : "Mock mode: no deployed contract"}
                       </Box>
                     </div>
                     <div>
-                      <Box variant="awsui-key-label">Connected Web3 RPC Node</Box>
-                      <StatusIndicator type="success">Connected (Local Anvil)</StatusIndicator>
+                      <Box variant="awsui-key-label">RPC node</Box>
+                      {blockchainConfig?.mode === 'anvil' && blockchainHealth?.healthy ? (
+                        <StatusIndicator type="success">Local Anvil connected</StatusIndicator>
+                      ) : blockchainConfig?.mode === 'anvil' ? (
+                        <StatusIndicator type="error">Local Anvil unavailable</StatusIndicator>
+                      ) : (
+                        <StatusIndicator type="info">Mock mode</StatusIndicator>
+                      )}
                     </div>
                     <div>
                       <Box variant="awsui-key-label">Accrued Commissions</Box>
@@ -2840,7 +2775,7 @@ export default function App({ walletButton }: AppProps) {
                 <Container variant="stacked" header={<Header variant="h2">Liquidity & Settlement Engine</Header>}>
                   <SpaceBetween size="s">
                     <Box className="muted-copy">
-                      Settlement is backed by a 500K USDC reserve fund to support active loan financing. Collateral liquidation occurs on contract maturity.
+                      A 500K USDC reserve funds active loans. Matured defaults move to liquidation.
                     </Box>
                     <div className="summary-grid summary-grid--single">
                       <div className="summary-item">
@@ -2861,13 +2796,13 @@ export default function App({ walletButton }: AppProps) {
         case '#system-adapters':
           return (
             <SpaceBetween size="l">
-              <Container variant="stacked" header={<Header variant="h2">System Adapters (OOP Interfaces)</Header>}>
+              <Container variant="stacked" header={<Header variant="h2">System Adapters</Header>}>
                 <ColumnLayout columns={2}>
                   <Container variant="stacked" header={<Header variant="h3">KYC/AML Provider Adapter</Header>}>
                     <SpaceBetween size="xs">
                       <StatusIndicator type="success">Connected</StatusIndicator>
                       <Box className="muted-copy">
-                        Host: Mock KYC provider port. Simulates real-time AML checks and instantly verifies customer wallet addresses.
+                        Mock KYC provider. Verifies demo wallet ownership.
                       </Box>
                       <span className="latency-text">Port: IKycProvider | Latency: 12ms</span>
                     </SpaceBetween>
@@ -2876,7 +2811,7 @@ export default function App({ walletButton }: AppProps) {
                     <SpaceBetween size="xs">
                       <StatusIndicator type="success">Connected</StatusIndicator>
                       <Box className="muted-copy">
-                        Host: Mock FedEx Shipping API. Simulates cargo dispatch and generates courier tracking codes.
+                        Mock courier provider. Issues tracking codes and custody events.
                       </Box>
                       <span className="latency-text">Port: ILogisticsProvider | Latency: 34ms</span>
                     </SpaceBetween>
@@ -2885,7 +2820,7 @@ export default function App({ walletButton }: AppProps) {
                     <SpaceBetween size="xs">
                       <StatusIndicator type="success">Connected</StatusIndicator>
                       <Box className="muted-copy">
-                        Host: Mock IPFS Pinata Gateway. Pins unboxing video proofs and signed appraisal documents.
+                        Mock storage provider. Stores evidence references and hashes.
                       </Box>
                       <span className="latency-text">Port: IStorageProvider | Latency: 82ms</span>
                     </SpaceBetween>
@@ -2906,7 +2841,7 @@ export default function App({ walletButton }: AppProps) {
                           ? blockchainHealth?.healthy
                             ? `Connected to Local Anvil node at http://localhost:8545. PawnProtocol address: ${blockchainConfig.pawnProtocolAddress || 'unknown'}`
                             : `Connection failed: ${blockchainHealth?.reason || 'unreachable'}`
-                          : "Host: Mock gateway. Simulates smart contract transactions offline."}
+                          : "Mock blockchain gateway. No RPC required."}
                       </Box>
                       <span className="latency-text">
                         Port: IBlockchainGateway | Mode: {blockchainConfig ? blockchainConfig.mode : 'loading'}
@@ -2964,7 +2899,7 @@ export default function App({ walletButton }: AppProps) {
                   handleSearch(searchQuery);
                 }
               }}
-              placeholder="Search assets, loans, listings, or tx hashes"
+              placeholder="Search assets, loans, listings, tx"
               type="search"
             />
             <span className="search-enter-hint" style={{ position: 'absolute', right: '8px', pointerEvents: 'none', zIndex: 10 }}>↵ Enter</span>
@@ -3040,7 +2975,7 @@ export default function App({ walletButton }: AppProps) {
                   />
                   <Header
                     variant="h1"
-                    description={`${pageLabelMap[activeHref] || 'Overview'}. Demo session: ${session?.displayName ?? 'Demo Customer'}.`}
+                    description={`${pageLabelMap[activeHref] || 'Overview'} | ${session?.displayName ?? 'Demo Customer'}`}
                   >
                     Physical Asset Pawnshop Operations
                   </Header>
