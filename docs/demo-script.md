@@ -38,6 +38,7 @@ Configure the backend to use `anvil` mode and start the dev server:
 
 1. Create or edit `apps/api/.env`:
    ```bash
+   DEMO_MODE=true
    BLOCKCHAIN_MODE=anvil
    ```
 

@@ -38,7 +38,7 @@ graph TD
 ## Authentication & Authorization Guard Hardening
 
 The application employs real NestJS guards and decorators to secure HTTP controller endpoints:
-- **JWT Authentication Guard (`JwtAuthGuard`)**: Replaces simple mockup authentication by verifying Bearer JWT tokens issued at demo login/wallet login.
+- **JWT Authentication Guard (`JwtAuthGuard`)**: Verifies Bearer JWT tokens issued by demo login or wallet login.
 - **Role-Based Authorization Guard (`RolesGuard`)**: Restricts controller actions to appropriate roles (`CUSTOMER`, `STAFF`, `ADMIN`) using the `@Roles(...)` metadata decorator.
 - **Current User Context (`@CurrentUser()`)**: Discards unsafe client-controlled actor headers/fields (like `x-user-id`, `sellerId`, `buyerId`) and derives user identity securely from the validated JWT token payload.
 - **Cross-Customer Security**: Prohibits customers from performing actions on or viewing assets, loans, or layaways belonging to other customers.
@@ -67,8 +67,8 @@ The application supports two blockchain gateway modes selected by the `BLOCKCHAI
 | **RPC Requirement** | None. Completely self-contained. | Local Anvil node running at `http://127.0.0.1:8545`. |
 | **Deployment Info** | Dummy configurations. | Loads `PawnShop-SmartContract/deployments/local-anvil.json`. |
 | **Blockchain Health** | Always healthy (offline simulation). | Verifies RPC connection via `eth_chainId` and checks deployed contract bytecode exists via `eth_getCode`. |
-| **Loan Disbursement** | Generates a random mockup transaction hash. | Generates a mock transaction hash (real contract requires signed transaction). |
-| **Repayment Recording** | Instant success; no on-chain validation. | Queries the local Anvil node via `eth_getTransactionReceipt` to verify that the tx hash exists, has a successful status, and contains at least one log emitted by the configured `PawnProtocol` contract address. |
+| **Loan Acceptance** | Simulates the transaction and records a demo hash. | Customer signs `ERC721.approve` and `createPawnLoan`; backend verifies the `LoanCreated` receipt. |
+| **Repayment Recording** | Simulates repayment and records a demo hash. | Customer signs `ERC20.approve` and `repayPawn`; backend verifies the `LoanRepaid` receipt. |
 
 ---
 
@@ -102,7 +102,7 @@ In Phase 2A, the customer wallet signs real on-chain transactions for loan accep
 ### 2. Remaining Mismatch
 The smart contract expects the borrower to initiate `createPawnLoan(...)` directly with knowledge of the offer parameters. Currently, the backend passes these parameters to the frontend as unsigned calldata actions, and the frontend submits them. This works for the demo but a production system would require signed off-chain offers.
 
-### 3. Phase 2C/3 Recommendations
+### 3. Next Hardening Options
 To fully bridge this mismatch:
 - **Option A (Contract-Side Offers)**: Modify `PawnProtocol` to support loan offers signed off-chain by the platform admin/oracle. The borrower can then submit the signed offer along with their acceptance transaction to `acceptPawnOffer(...)` on-chain.
 - **Option B (Backend-Signed Transaction Dispatches)**: Have the backend act as an agent that holds the borrower's temporary signature authorization, calling `createPawnLoan` on their behalf via an admin/relayer account once terms are accepted in the app.
@@ -121,7 +121,7 @@ The application demonstrates clean design principles (DIP/SOLID) through reposit
   Selecting a repository type is as simple as configuring `PERSISTENCE_MODE` in the `.env` configuration file:
   - `PERSISTENCE_MODE=memory` (fallback default)
   - `PERSISTENCE_MODE=postgres`
-  When PostgreSQL is active, database schemas are generated automatically (`synchronize: true`) for rapid local capstone/demo prototyping. Note that this is not suitable for production; a real production deployment must turn `synchronize` off and run versioned TypeORM migrations. Standard seed entries are populated on startup if tables are empty.
+  When PostgreSQL is active, local demo runs can use `DB_SYNCHRONIZE=true` for fast setup. Production-like runs should set `DB_SYNCHRONIZE=false` and `DB_MIGRATIONS_RUN=true` to use the versioned TypeORM migration in `apps/api/src/infrastructure/persistence/migrations`. Standard seed entries are populated on startup if tables are empty.
 
 ### Running with PostgreSQL
 1. Start the PostgreSQL container service:
@@ -136,7 +136,7 @@ The application demonstrates clean design principles (DIP/SOLID) through reposit
    DB_USERNAME=postgres
    DB_PASSWORD=postgres
    DB_DATABASE=pwn_shop
+   DB_SYNCHRONIZE=true
+   DB_MIGRATIONS_RUN=false
    ```
-3. Restart the backend. The API will establish connection with the database and run schema generation automatically.
-
-
+3. Restart the backend. The API will connect to the database and initialize schema using the configured persistence mode.

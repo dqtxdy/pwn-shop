@@ -50,11 +50,15 @@ import {
   AuditEventEntity,
   BlockchainTransactionEntity
 } from '../entities';
+import { InitialSchema1717580000000 } from '../migrations/1717580000000-InitialSchema';
 
 export class PostgresPawnRepository implements PawnRepository, OnApplicationShutdown {
   private dataSource!: DataSource;
 
   async initialize(): Promise<void> {
+    const runMigrations = process.env.DB_MIGRATIONS_RUN === 'true';
+    const synchronize = process.env.DB_SYNCHRONIZE !== 'false' && !runMigrations;
+
     this.dataSource = new DataSource({
       type: 'postgres',
       host: process.env.DB_HOST || 'localhost',
@@ -80,7 +84,9 @@ export class PostgresPawnRepository implements PawnRepository, OnApplicationShut
         AuditEventEntity,
         BlockchainTransactionEntity
       ],
-      synchronize: true, // Automate schema mapping for local capstone prototyping only
+      synchronize,
+      migrations: [InitialSchema1717580000000],
+      migrationsRun: runMigrations,
       logging: false,
     });
 

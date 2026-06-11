@@ -59,6 +59,7 @@ The backend defaults to:
 - Web origin: `http://localhost:5173`
 - Persistence: in-memory
 - Blockchain: mock adapter
+- Demo endpoints: enabled through `DEMO_MODE=true` in `apps/api/.env`
 
 The frontend defaults to `http://localhost:3000/api` without an env file. If you change the
 API port, create `apps/web/.env.local` and set:
@@ -122,6 +123,8 @@ DB_PORT=5432
 DB_USERNAME=postgres
 DB_PASSWORD=postgres
 DB_DATABASE=pwn_shop
+DB_SYNCHRONIZE=true
+DB_MIGRATIONS_RUN=false
 ```
 
 Start the app:
