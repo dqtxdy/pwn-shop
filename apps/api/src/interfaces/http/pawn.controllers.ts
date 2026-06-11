@@ -7,6 +7,7 @@ import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { RolesGuard } from './guards/roles.guard';
 import { Roles } from './decorators/roles.decorator';
 import { CurrentUser } from './decorators/current-user.decorator';
+import { AuthenticatedUser } from './authenticated-user';
 import { UserRole } from '../../domain/enums';
 import {
   AcceptLoanDto,
@@ -56,7 +57,7 @@ export class KycController {
 
   @Post(':userId/:walletAddress')
   @Roles(UserRole.Customer)
-  request(@Param('userId') userId: string, @Param('walletAddress') walletAddress: string, @CurrentUser() user: any) {
+  request(@Param('userId') userId: string, @Param('walletAddress') walletAddress: string, @CurrentUser() user: AuthenticatedUser) {
     if (user.id !== userId) {
       throw new ForbiddenException('Cannot request KYC for another user');
     }
@@ -71,13 +72,13 @@ export class AssetsController {
 
   @Post()
   @Roles(UserRole.Customer)
-  create(@Body() dto: CreateAssetDto, @CurrentUser() user: any) {
+  create(@Body() dto: CreateAssetDto, @CurrentUser() user: AuthenticatedUser) {
     return this.workflow.createAsset(dto, user);
   }
 
   @Get()
   @Roles(UserRole.Customer, UserRole.Staff, UserRole.Admin)
-  list(@CurrentUser() user: any) {
+  list(@CurrentUser() user: AuthenticatedUser) {
     return this.workflow.listAssets(user);
   }
 }
@@ -89,7 +90,7 @@ export class EvidenceController {
 
   @Post()
   @Roles(UserRole.Customer, UserRole.Staff, UserRole.Admin)
-  upload(@Body() dto: UploadEvidenceDto, @CurrentUser() user: any) {
+  upload(@Body() dto: UploadEvidenceDto, @CurrentUser() user: AuthenticatedUser) {
     dto.uploadedBy = user.id;
     return this.workflow.uploadEvidence(dto, user);
   }
@@ -102,13 +103,13 @@ export class ShipmentsController {
 
   @Post()
   @Roles(UserRole.Customer, UserRole.Staff)
-  create(@Body() dto: CreateShipmentDto, @CurrentUser() user: any) {
+  create(@Body() dto: CreateShipmentDto, @CurrentUser() user: AuthenticatedUser) {
     return this.workflow.createShipment(dto, user);
   }
 
   @Get(':assetId')
   @Roles(UserRole.Customer, UserRole.Staff, UserRole.Admin)
-  track(@Param('assetId') assetId: string, @CurrentUser() user: any) {
+  track(@Param('assetId') assetId: string, @CurrentUser() user: AuthenticatedUser) {
     return this.workflow.trackShipment(assetId, user);
   }
 }
@@ -120,7 +121,7 @@ export class AppraisalsController {
 
   @Post()
   @Roles(UserRole.Staff)
-  create(@Body() dto: CreateAppraisalDto, @CurrentUser() user: any) {
+  create(@Body() dto: CreateAppraisalDto, @CurrentUser() user: AuthenticatedUser) {
     dto.appraiserId = user.id;
     return this.workflow.createAppraisal(dto);
   }
@@ -139,7 +140,7 @@ export class LoansController {
 
   @Post(':loanId/accept')
   @Roles(UserRole.Customer)
-  accept(@Param('loanId') loanId: string, @Body() dto: AcceptLoanDto, @CurrentUser() user: any) {
+  accept(@Param('loanId') loanId: string, @Body() dto: AcceptLoanDto, @CurrentUser() user: AuthenticatedUser) {
     return this.workflow.acceptLoan(loanId, dto, user);
   }
 }
@@ -151,7 +152,7 @@ export class RepaymentsController {
 
   @Post()
   @Roles(UserRole.Customer)
-  record(@Body() dto: RecordRepaymentDto, @CurrentUser() user: any) {
+  record(@Body() dto: RecordRepaymentDto, @CurrentUser() user: AuthenticatedUser) {
     return this.workflow.recordRepayment(dto, user);
   }
 }
@@ -169,7 +170,7 @@ export class MarketplaceController {
 
   @Post('listings')
   @Roles(UserRole.Customer, UserRole.Admin)
-  create(@Body() dto: CreateListingDto, @CurrentUser() user: any) {
+  create(@Body() dto: CreateListingDto, @CurrentUser() user: AuthenticatedUser) {
     if (user.role === UserRole.Customer) {
       if (dto.isProtocolOwned) {
         throw new ForbiddenException('Customer cannot create protocol-owned listings');
@@ -194,13 +195,13 @@ export class LayawaysController {
 
   @Post()
   @Roles(UserRole.Customer)
-  create(@Body() dto: CreateLayawayDto, @CurrentUser() user: any) {
+  create(@Body() dto: CreateLayawayDto, @CurrentUser() user: AuthenticatedUser) {
     return this.workflow.createLayaway(dto, user);
   }
 
   @Post(':layawayId/pay')
   @Roles(UserRole.Customer)
-  pay(@Param('layawayId') layawayId: string, @Body() dto: PayLayawayDto, @CurrentUser() user: any) {
+  pay(@Param('layawayId') layawayId: string, @Body() dto: PayLayawayDto, @CurrentUser() user: AuthenticatedUser) {
     return this.workflow.payLayaway(layawayId, dto, user);
   }
 }
@@ -212,19 +213,19 @@ export class FractionsController {
 
   @Post('fractionalize')
   @Roles(UserRole.Customer, UserRole.Admin)
-  fractionalize(@Body() dto: FractionalizeAssetDto, @CurrentUser() user: any) {
+  fractionalize(@Body() dto: FractionalizeAssetDto, @CurrentUser() user: AuthenticatedUser) {
     return this.workflow.fractionalizeAsset(dto, user.id);
   }
 
   @Post('buy')
   @Roles(UserRole.Customer)
-  buy(@Body() dto: BuyFractionsDto, @CurrentUser() user: any) {
+  buy(@Body() dto: BuyFractionsDto, @CurrentUser() user: AuthenticatedUser) {
     return this.workflow.buyFractions(dto, user.id);
   }
 
   @Post('redeem')
   @Roles(UserRole.Customer)
-  redeem(@Body() dto: RedeemAssetDto, @CurrentUser() user: any) {
+  redeem(@Body() dto: RedeemAssetDto, @CurrentUser() user: AuthenticatedUser) {
     return this.workflow.redeemAsset(dto, user.id);
   }
 
@@ -236,7 +237,7 @@ export class FractionsController {
 
   @Get('positions/:userId')
   @Roles(UserRole.Customer, UserRole.Staff, UserRole.Admin)
-  getPositions(@Param('userId') userId: string, @CurrentUser() user: any) {
+  getPositions(@Param('userId') userId: string, @CurrentUser() user: AuthenticatedUser) {
     if (user.role === UserRole.Customer && user.id !== userId) {
       throw new ForbiddenException('Cannot view positions of another customer');
     }
@@ -251,7 +252,7 @@ export class DisputesController {
 
   @Post()
   @Roles(UserRole.Customer)
-  create(@Body() dto: CreateDisputeDto, @CurrentUser() user: any) {
+  create(@Body() dto: CreateDisputeDto, @CurrentUser() user: AuthenticatedUser) {
     return this.workflow.createDispute(dto, user);
   }
 
@@ -269,7 +270,7 @@ export class AdminController {
 
   @Get('dashboard')
   @Roles(UserRole.Admin, UserRole.Staff, UserRole.Customer)
-  dashboard(@CurrentUser() user: any) {
+  dashboard(@CurrentUser() user: AuthenticatedUser) {
     return this.workflow.dashboard(user);
   }
 }
@@ -290,11 +291,12 @@ export class DemoController {
 
   @Post('reset')
   async reset() {
-    if (process.env.NODE_ENV === 'production') {
-      throw new ForbiddenException('Demo reset is not allowed in production mode');
+    const demoEnabled = process.env.DEMO_MODE === 'true' || process.env.NODE_ENV === 'test';
+    if (process.env.NODE_ENV === 'production' || !demoEnabled) {
+      throw new ForbiddenException('Demo reset is disabled. Set DEMO_MODE=true for local demonstrations.');
     }
     await this.workflow.reset();
-    return { success: true, message: 'InMemory database reset successfully' };
+    return { success: true, message: 'Demo data reset successfully' };
   }
 }
 

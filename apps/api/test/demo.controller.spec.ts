@@ -54,7 +54,7 @@ describe('DemoController', () => {
   it('reset works in non-production/test mode', async () => {
     process.env.NODE_ENV = 'test';
     const result = await controller.reset();
-    expect(result).toEqual({ success: true, message: 'InMemory database reset successfully' });
+    expect(result).toEqual({ success: true, message: 'Demo data reset successfully' });
   });
 
   it('reset is rejected with ForbiddenException in production mode', async () => {

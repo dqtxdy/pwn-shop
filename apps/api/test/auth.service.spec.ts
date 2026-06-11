@@ -1,5 +1,6 @@
 import { Test } from '@nestjs/testing';
 import { JwtModule } from '@nestjs/jwt';
+import { Wallet as EthersWallet } from 'ethers';
 import { AuthService } from '../src/application/services/auth.service';
 import { InMemoryPawnRepository } from '../src/infrastructure/persistence/repositories/in-memory-pawn.repository';
 import { PAWN_REPOSITORY } from '../src/common/tokens';
@@ -70,6 +71,38 @@ describe('AuthService', () => {
       expect(session.token).toBeDefined();
       expect(typeof session.token).toBe('string');
       expect(session.walletAddress).toBe('0x3333333333333333333333333333333333333333');
+    });
+
+    it('accepts a real wallet signature challenge', async () => {
+      const wallet = EthersWallet.createRandom();
+      const { nonce } = service.createNonce(wallet.address);
+      const signature = await wallet.signMessage(nonce);
+
+      const result = await service.login(wallet.address, 31337, signature);
+
+      expect(result.accessToken).toEqual(expect.any(String));
+      expect(result.user.role).toBe(UserRole.Customer);
+      expect(result.user.displayName).toBe(`Customer ${wallet.address.toLowerCase().slice(0, 6)}`);
+    });
+
+    it('rejects signatures from a different wallet', async () => {
+      const requestedWallet = EthersWallet.createRandom();
+      const attackerWallet = EthersWallet.createRandom();
+      const { nonce } = service.createNonce(requestedWallet.address);
+      const attackerSignature = await attackerWallet.signMessage(nonce);
+
+      await expect(service.login(requestedWallet.address, 31337, attackerSignature)).rejects.toThrow(
+        'Wallet signature does not match requested address'
+      );
+    });
+
+    it('rejects login attempts without an issued nonce', async () => {
+      const wallet = EthersWallet.createRandom();
+      const signature = await wallet.signMessage('not the issued challenge');
+
+      await expect(service.login(wallet.address, 31337, signature)).rejects.toThrow(
+        'Invalid wallet signature challenge'
+      );
     });
   });
 
