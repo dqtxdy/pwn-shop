@@ -145,41 +145,30 @@ test.describe('PawnShop Protocol E2E Flow', () => {
   });
 
   test('should verify search behavior: no immediate navigation on type, navigate on Enter match, show warning on no match', async ({ page }) => {
-    // 1. Initially we are on Customer Workspace Home (#overview)
     await expect(page.locator('h1')).toContainText('Physical Asset Pawnshop Operations');
     await expect(page.locator('.quickstart-panel')).toBeVisible();
 
-    // 2. Locate the search input
     const searchInput = page.locator('.console-topbar__search input');
     await expect(searchInput).toBeVisible();
 
-    // 3. Type a matching query ("MacBook") but do NOT press Enter yet
     await searchInput.fill('MacBook');
-    // Wait a brief moment and check that we are STILL on Overview (no immediate navigation on type)
     await page.waitForTimeout(500);
     await expect(page.locator('.quickstart-panel')).toBeVisible();
 
-    // 4. Press Enter to execute search
     await searchInput.press('Enter');
 
-    // 5. Verify it navigated to My Assets and selected the item
     await expect(page.locator('h2', { hasText: 'My Assets' })).toBeVisible();
     await expect(page.locator('.assets-layout')).toBeVisible();
     await expect(page.locator('h3', { hasText: 'MacBook Pro M3' })).toBeVisible();
-    
-    // 6. Go back to Overview to test no match warning
+
     await page.locator('a[href="#overview"]:has-text("Overview")').first().click();
     await expect(page.locator('.quickstart-panel')).toBeVisible();
 
-    // 7. Type a query that matches nothing ("Xbox One") and press Enter
     await searchInput.fill('Xbox One');
     await searchInput.press('Enter');
 
-    // 8. Assert that we are STILL on the Overview page
     await expect(page.locator('.quickstart-panel')).toBeVisible();
-
-    // 9. Assert that a warning message is displayed
-    await expect(page.getByText('No results found for "Xbox One"')).toBeVisible();
+    await expect(page.getByText('No results for "Xbox One"')).toBeVisible();
   });
 
   test('should navigate to Fractions workspace and render all three panels', async ({ page }) => {
@@ -198,4 +187,3 @@ test.describe('PawnShop Protocol E2E Flow', () => {
     await expect(eligibleTable).toBeVisible();
   });
 });
-

@@ -27,7 +27,19 @@ import Flashbar from '@cloudscape-design/components/flashbar';
 import FileUpload from '@cloudscape-design/components/file-upload';
 
 import { api } from './api';
-import type { Asset, Listing, Layaway, PawnDashboard, AssetStatus, DemoSession, BlockchainConfig, BlockchainHealth, FractionalAsset, FractionalPosition } from './api';
+import type {
+  Asset,
+  Listing,
+  Layaway,
+  PawnDashboard,
+  AssetStatus,
+  DemoSession,
+  BlockchainConfig,
+  BlockchainHealth,
+  FractionalAsset,
+  FractionalPosition,
+  LayawayPaymentResponse
+} from './api';
 import { useAccount, useSendTransaction, useWriteContract, usePublicClient } from 'wagmi';
 import { workflowSteps } from './mockData';
 import {
@@ -38,6 +50,11 @@ import {
   roleSelectOptions,
   workspaceHomeHref
 } from './workspaceConfig';
+import {
+  createAppraisalEvidenceUri,
+  createLocalTransactionHash,
+  createNotificationId
+} from './workflowUtils';
 
 type AppProps = {
   walletButton: ReactNode;
@@ -96,7 +113,7 @@ export default function App({ walletButton }: AppProps) {
     if (matchedAsset) {
       setSelectedAsset(matchedAsset);
       setActiveHref('#my-assets');
-      addNotification('info', `Found and selected matching asset "${matchedAsset.title}"`);
+      addNotification('info', `Selected asset: "${matchedAsset.title}"`);
       return;
     }
 
@@ -108,7 +125,7 @@ export default function App({ walletButton }: AppProps) {
       if (asset) {
         setSelectedAsset(asset);
         setActiveHref('#my-assets');
-        addNotification('info', `Found active loan ${matchedLoan.id} for "${asset.title}"`);
+        addNotification('info', `Opened loan ${matchedLoan.id} for "${asset.title}"`);
         return;
       }
     }
@@ -118,11 +135,11 @@ export default function App({ walletButton }: AppProps) {
     );
     if (matchedListing) {
       setActiveHref('#marketplace');
-      addNotification('info', `Found listing ${matchedListing.id} in Marketplace`);
+      addNotification('info', `Opened listing ${matchedListing.id} in Marketplace`);
       return;
     }
 
-    addNotification('warning', `No results found for "${query}"`);
+    addNotification('warning', `No results for "${query}"`);
   };
 
   // Selection states
@@ -219,7 +236,7 @@ export default function App({ walletButton }: AppProps) {
             to: actions[0].to as `0x${string}`,
             data: actions[0].calldata as `0x${string}`
           });
-          addNotification('info', `Approval transaction submitted! waiting for confirmation (Tx: ${approveHash.slice(0, 10)}...)...`);
+          addNotification('info', txSubmittedMessage('Approval', approveHash));
           await publicClient!.waitForTransactionReceipt({ hash: approveHash });
           addNotification('success', 'Approval confirmed. Sign fractionalization.');
 
@@ -227,9 +244,9 @@ export default function App({ walletButton }: AppProps) {
             to: actions[1].to as `0x${string}`,
             data: actions[1].calldata as `0x${string}`
           });
-          addNotification('info', `Fractionalization submitted! waiting for confirmation (Tx: ${fracHash.slice(0, 10)}...)...`);
+          addNotification('info', txSubmittedMessage('Fractionalization', fracHash));
           await publicClient!.waitForTransactionReceipt({ hash: fracHash });
-          addNotification('success', 'Fractionalization confirmed! Completing with server...');
+          addNotification('success', SERVER_CONFIRMATION_MESSAGE);
 
           await api.fractionalizeAsset({
             assetId: fractionalizeAssetId,
@@ -304,7 +321,7 @@ export default function App({ walletButton }: AppProps) {
             to: actions[0].to as `0x${string}`,
             data: actions[0].calldata as `0x${string}`
           });
-          addNotification('info', `Approval transaction submitted! waiting for confirmation (Tx: ${approveHash.slice(0, 10)}...)...`);
+          addNotification('info', txSubmittedMessage('Approval', approveHash));
           await publicClient!.waitForTransactionReceipt({ hash: approveHash });
           addNotification('success', 'Approval confirmed. Sign fraction purchase.');
 
@@ -312,9 +329,9 @@ export default function App({ walletButton }: AppProps) {
             to: actions[1].to as `0x${string}`,
             data: actions[1].calldata as `0x${string}`
           });
-          addNotification('info', `Buy Fractions transaction submitted! waiting for confirmation (Tx: ${buyHash.slice(0, 10)}...)...`);
+          addNotification('info', txSubmittedMessage('Fraction purchase', buyHash));
           await publicClient!.waitForTransactionReceipt({ hash: buyHash });
-          addNotification('success', 'Buy Fractions transaction confirmed! Completing with server...');
+          addNotification('success', SERVER_CONFIRMATION_MESSAGE);
 
           await api.buyFractions({
             assetId: selectedFracAsset.assetId,
@@ -374,9 +391,9 @@ export default function App({ walletButton }: AppProps) {
             to: actions[0].to as `0x${string}`,
             data: actions[0].calldata as `0x${string}`
           });
-          addNotification('info', `Redeem transaction submitted! waiting for confirmation (Tx: ${redeemHash.slice(0, 10)}...)...`);
+          addNotification('info', txSubmittedMessage('Redemption', redeemHash));
           await publicClient!.waitForTransactionReceipt({ hash: redeemHash });
-          addNotification('success', 'Redeem transaction confirmed! Completing with server...');
+          addNotification('success', SERVER_CONFIRMATION_MESSAGE);
 
           await api.redeemAsset({
             assetId,
@@ -526,7 +543,7 @@ export default function App({ walletButton }: AppProps) {
       {
         type,
         content,
-        id: Math.random().toString(),
+        id: createNotificationId(),
         dismissible: true,
         onDismiss: () => setNotifications([])
       }
@@ -758,7 +775,7 @@ export default function App({ walletButton }: AppProps) {
             to: actions[0].to as `0x${string}`,
             data: actions[0].calldata as `0x${string}`
           });
-          addNotification('info', `Approval transaction submitted! waiting for confirmation (Tx: ${approveHash.slice(0, 10)}...)...`);
+          addNotification('info', txSubmittedMessage('Approval', approveHash));
           await publicClient!.waitForTransactionReceipt({ hash: approveHash });
           addNotification('success', 'Approval confirmed. Sign loan creation.');
 
@@ -766,9 +783,9 @@ export default function App({ walletButton }: AppProps) {
             to: actions[1].to as `0x${string}`,
             data: actions[1].calldata as `0x${string}`
           });
-          addNotification('info', `Loan creation submitted! waiting for confirmation (Tx: ${loanHash.slice(0, 10)}...)...`);
+          addNotification('info', txSubmittedMessage('Loan creation', loanHash));
           await publicClient!.waitForTransactionReceipt({ hash: loanHash });
-          addNotification('success', 'Loan creation confirmed! Completing with server...');
+          addNotification('success', SERVER_CONFIRMATION_MESSAGE);
 
           await api.acceptLoan(loanId, {
             borrowerWallet: connectedAddress as string,
@@ -861,7 +878,7 @@ export default function App({ walletButton }: AppProps) {
             approvalAmount
           ]
         });
-        addNotification('info', `ERC20 Approve submitted! waiting for confirmation (Tx: ${approveHash.slice(0, 10)}...)...`);
+        addNotification('info', txSubmittedMessage('Token approval', approveHash));
         await client.waitForTransactionReceipt({ hash: approveHash });
         addNotification('success', 'Approval confirmed. Sign repayment.');
 
@@ -879,12 +896,12 @@ export default function App({ walletButton }: AppProps) {
           functionName: 'repayPawn',
           args: [BigInt(tokenId)]
         });
-        addNotification('info', `Repayment transaction submitted! waiting for confirmation (Tx: ${repayHash.slice(0, 10)}...)...`);
+        addNotification('info', txSubmittedMessage('Repayment', repayHash));
         await client.waitForTransactionReceipt({ hash: repayHash });
-        addNotification('success', 'Repayment confirmed! Completing with server...');
+        addNotification('success', SERVER_CONFIRMATION_MESSAGE);
         txHash = repayHash;
       } else {
-        txHash = '0x' + Array.from({ length: 64 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
+        txHash = createLocalTransactionHash();
       }
 
       await api.recordRepayment({
@@ -950,7 +967,7 @@ export default function App({ walletButton }: AppProps) {
             to: actions[0].to as `0x${string}`,
             data: actions[0].calldata as `0x${string}`
           });
-          addNotification('info', `Approval transaction submitted! waiting for confirmation (Tx: ${approveHash.slice(0, 10)}...)...`);
+          addNotification('info', txSubmittedMessage('Approval', approveHash));
           await publicClient!.waitForTransactionReceipt({ hash: approveHash });
           addNotification('success', 'Approval confirmed. Sign listing.');
 
@@ -958,9 +975,9 @@ export default function App({ walletButton }: AppProps) {
             to: actions[1].to as `0x${string}`,
             data: actions[1].calldata as `0x${string}`
           });
-          addNotification('info', `Listing creation submitted! waiting for confirmation (Tx: ${listingHash.slice(0, 10)}...)...`);
+          addNotification('info', txSubmittedMessage('Listing', listingHash));
           await publicClient!.waitForTransactionReceipt({ hash: listingHash });
-          addNotification('success', 'Listing confirmed! Completing with server...');
+          addNotification('success', SERVER_CONFIRMATION_MESSAGE);
 
           await api.createListing({
             assetId: listingAssetId,
@@ -1025,7 +1042,7 @@ export default function App({ walletButton }: AppProps) {
         estimatedValue,
         ltvBps,
         interestAprBps: 500, // 5% APR
-        evidenceUri: 'ipfs://mock-physical-appraisal-valuation'
+        evidenceUri: createAppraisalEvidenceUri(appraisalAssetId)
       });
 
       // 2. Automatically create/register the Loan Offer DTO
@@ -1096,7 +1113,7 @@ export default function App({ walletButton }: AppProps) {
             to: actions[0].to as `0x${string}`,
             data: actions[0].calldata as `0x${string}`
           });
-          addNotification('info', `ERC20 approval submitted! waiting for confirmation (Tx: ${approveHash.slice(0, 10)}...)...`);
+          addNotification('info', txSubmittedMessage('Token approval', approveHash));
           await publicClient!.waitForTransactionReceipt({ hash: approveHash });
           addNotification('success', 'Approval confirmed. Sign layaway.');
 
@@ -1104,9 +1121,9 @@ export default function App({ walletButton }: AppProps) {
             to: actions[1].to as `0x${string}`,
             data: actions[1].calldata as `0x${string}`
           });
-          addNotification('info', `Layaway initiation submitted! waiting for confirmation (Tx: ${layawayHash.slice(0, 10)}...)...`);
+          addNotification('info', txSubmittedMessage('Layaway', layawayHash));
           await publicClient!.waitForTransactionReceipt({ hash: layawayHash });
-          addNotification('success', 'Layaway confirmed! Completing with server...');
+          addNotification('success', SERVER_CONFIRMATION_MESSAGE);
 
           await api.createLayaway({
             listingId: listing.id,
@@ -1122,7 +1139,7 @@ export default function App({ walletButton }: AppProps) {
           monthsDuration: 6
         });
       }
-      addNotification('success', `Layaway started. Down payment processed.`);
+      addNotification('success', 'Layaway started. Down payment processed.');
       await loadData();
     } catch (err: any) {
       addNotification('error', err.message || 'Layaway failed');
@@ -1173,11 +1190,7 @@ export default function App({ walletButton }: AppProps) {
         const response = await api.payLayaway(layaway.id, {});
 
         if (response && 'status' in response && response.status === 'AWAITING_WALLET_EXECUTION') {
-          const { actions, nextInstallmentAmountDisplay } = response as {
-            status: string;
-            actions: any[];
-            nextInstallmentAmountDisplay?: string;
-          };
+          const { actions, nextInstallmentAmountDisplay } = response as LayawayPaymentResponse;
           if (!actions || actions.length < 2) {
             throw new Error('Wallet action is invalid');
           }
@@ -1191,7 +1204,7 @@ export default function App({ walletButton }: AppProps) {
             to: actions[0].to as `0x${string}`,
             data: actions[0].calldata as `0x${string}`
           });
-          addNotification('info', `ERC20 approval submitted! waiting for confirmation (Tx: ${approveHash.slice(0, 10)}...)...`);
+          addNotification('info', txSubmittedMessage('Token approval', approveHash));
           await publicClient!.waitForTransactionReceipt({ hash: approveHash });
           addNotification('success', 'Approval confirmed. Sign installment.');
 
@@ -1199,9 +1212,9 @@ export default function App({ walletButton }: AppProps) {
             to: actions[1].to as `0x${string}`,
             data: actions[1].calldata as `0x${string}`
           });
-          addNotification('info', `Pay installment submitted! waiting for confirmation (Tx: ${payHash.slice(0, 10)}...)...`);
+          addNotification('info', txSubmittedMessage('Installment payment', payHash));
           await publicClient!.waitForTransactionReceipt({ hash: payHash });
-          addNotification('success', 'Payment confirmed! Completing with server...');
+          addNotification('success', SERVER_CONFIRMATION_MESSAGE);
 
           finalLayaway = await api.payLayaway(layaway.id, { txHash: payHash }) as Layaway;
         } else {
@@ -1214,7 +1227,7 @@ export default function App({ walletButton }: AppProps) {
       const isCompleted = finalLayaway.status === 'COMPLETED';
       addNotification('success', isCompleted
         ? 'Final payment confirmed. Asset ownership transferred.'
-        : `Installment of ${displayAmount} USDC paid successfully.`
+        : `Installment paid: ${displayAmount} USDC.`
       );
       await loadData();
     } catch (err: any) {
@@ -2163,7 +2176,7 @@ export default function App({ walletButton }: AppProps) {
                                   onClick={() => {
                                     setAppraisalAssetId(item.id);
                                     setActiveHref('#appraisals');
-                                    addNotification('info', `Selected Asset ID ${item.id} for Appraisal`);
+                                    addNotification('info', `Selected ${item.id} for appraisal`);
                                   }}
                                 >
                                   Select for Appraisal
@@ -2224,22 +2237,22 @@ export default function App({ walletButton }: AppProps) {
 
                       <Alert header="Operational Instructions" type="info">
                         {selectedStaffAsset.status === 'AWAITING_SHIPMENT' && (
-                          "The customer has not yet shipped the physical asset. Await FedEx shipping confirmation."
+                          "Await courier pickup."
                         )}
                         {selectedStaffAsset.status === 'IN_TRANSIT' && (
-                          "Asset is currently in transit. Upon physical arrival, record the unboxing process and click 'Upload Unboxing Proof' to transition state."
+                          "In transit. Record unboxing proof after arrival."
                         )}
                         {['RECEIVED', 'UNDER_APPRAISAL'].includes(selectedStaffAsset.status) && (
-                          "Asset has arrived and is checked in. Next step is to evaluate condition and submit the Appraisal Form to draft a loan offer."
+                          "Evaluate condition. Submit appraisal."
                         )}
                         {selectedStaffAsset.status === 'OFFER_ISSUED' && (
-                          "Appraisal is complete and the loan offer has been issued to the customer. Awaiting customer acceptance."
+                          "Offer issued. Await customer acceptance."
                         )}
                         {selectedStaffAsset.status === 'LOAN_ACTIVE' && (
-                          "Asset is in active custody under collateral hold. Monitor repayment and release parameters."
+                          "Collateral locked. Monitor repayment."
                         )}
                         {selectedStaffAsset.status === 'RETURNED' && (
-                          "The loan is closed and the asset has been returned to the customer. No actions required."
+                          "Asset returned. No action needed."
                         )}
                       </Alert>
                     </SpaceBetween>
@@ -2274,20 +2287,20 @@ export default function App({ walletButton }: AppProps) {
                   <div className="metric-secondary-text">Validator videos</div>
                 </div>
                 <div className="metric-tile">
-                  <Box variant="awsui-key-label">IPFS pins</Box>
+                  <Box variant="awsui-key-label">Content hashes</Box>
                   <Box variant="h2" className="metric-value">{totalProofs * 2}</Box>
-                  <div className="metric-secondary-text">Metadata pinned</div>
+                  <div className="metric-secondary-text">Evidence integrity</div>
                 </div>
                 <div className="metric-tile">
                   <Box variant="awsui-key-label">Storage adapter</Box>
                   <Box variant="h2" className="metric-value">Active</Box>
-                  <div className="metric-secondary-text">IPFS Gateways healthy</div>
+                  <div className="metric-secondary-text">Configured provider</div>
                 </div>
               </div>
 
               <div className="two-column-layout">
                 <Container variant="stacked" header={<Header variant="h2">Intake Evidence Logs</Header>}>
-                  <Box color="text-label" padding={{ bottom: 's' }}>Validator unboxing proof and IPFS timeline.</Box>
+                  <Box color="text-label" padding={{ bottom: 's' }}>Validator unboxing proof and evidence timeline.</Box>
                   <div className="demo-table-wrapper">
                     <Table
                       variant="embedded"
@@ -2309,7 +2322,9 @@ export default function App({ walletButton }: AppProps) {
                           header: 'Evidence Status',
                           cell: (item) => {
                             if (item.status === 'AWAITING_SHIPMENT') return 'None';
-                            return item.status === 'IN_TRANSIT' ? 'Customer pre-shipment photos' : 'Unboxing mp4 + Vault check IPFS';
+                            return item.status === 'IN_TRANSIT'
+                              ? 'Customer pre-shipment photos'
+                              : 'Unboxing media + vault check hash';
                           }
                         }
                       ]}
@@ -2321,15 +2336,15 @@ export default function App({ walletButton }: AppProps) {
                 <Container variant="stacked" header={<Header variant="h2">Storage & Timelines</Header>}>
                   <SpaceBetween size="s">
                     <Box className="muted-copy">
-                      All validator unboxing evidence files and appraisal documents are signed and pinned to the IPFS Pinata gateway.
+                      Evidence is stored through the configured storage adapter and verified by content hash.
                     </Box>
                     <div className="summary-grid summary-grid--single">
                       <div className="summary-item">
                         <Box variant="awsui-key-label">Metadata target</Box>
-                        <Box variant="p">Decentralized IPFS pinning</Box>
+                        <Box variant="p">Mock object store or local filesystem</Box>
                       </div>
                       <div className="summary-item">
-                        <Box variant="awsui-key-label">Encryption standard</Box>
+                        <Box variant="awsui-key-label">Integrity check</Box>
                         <Box variant="p">SHA-256 content addressing</Box>
                       </div>
                     </div>
@@ -2582,9 +2597,9 @@ export default function App({ walletButton }: AppProps) {
                         <span className="latency-text">Ping: 34ms</span>
                       </div>
                       <div className="health-card">
-                        <Box variant="awsui-key-label">Storage (IPFS)</Box>
+                        <Box variant="awsui-key-label">Storage Adapter</Box>
                         <StatusIndicator type="success">Active</StatusIndicator>
-                        <span className="latency-text">Ping: 82ms</span>
+                        <span className="latency-text">Local object mode</span>
                       </div>
                       <div className="health-card">
                         <Box variant="awsui-key-label">Blockchain Gateway</Box>
@@ -2839,7 +2854,7 @@ export default function App({ walletButton }: AppProps) {
                       <Box className="muted-copy">
                         {blockchainConfig?.mode === 'anvil'
                           ? blockchainHealth?.healthy
-                            ? `Connected to Local Anvil node at http://localhost:8545. PawnProtocol address: ${blockchainConfig.pawnProtocolAddress || 'unknown'}`
+                            ? `Local Anvil connected. Protocol: ${blockchainConfig.pawnProtocolAddress || 'unknown'}`
                             : `Connection failed: ${blockchainHealth?.reason || 'unreachable'}`
                           : "Mock blockchain gateway. No RPC required."}
                       </Box>
