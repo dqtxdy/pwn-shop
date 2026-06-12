@@ -12,6 +12,8 @@ apps/web/.vite/
 *.tsbuildinfo
 coverage/
 .nyc_output/
+.local-object-storage/
+**/.local-object-storage/
 
 # Environment files
 .env

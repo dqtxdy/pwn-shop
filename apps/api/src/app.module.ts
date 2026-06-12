@@ -41,11 +41,19 @@ import {
   ShipmentsController
 } from './interfaces/http/pawn.controllers';
 
+const resolveJwtSecret = () => {
+  const secret = process.env.JWT_SECRET ?? 'capstone-dev-secret';
+  if (process.env.NODE_ENV === 'production' && secret === 'capstone-dev-secret') {
+    throw new Error('JWT_SECRET must be set to a non-default value in production');
+  }
+  return secret;
+};
+
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
     JwtModule.register({
-      secret: process.env.JWT_SECRET ?? 'capstone-dev-secret',
+      secret: resolveJwtSecret(),
       signOptions: { expiresIn: '2h' }
     })
   ],
@@ -87,7 +95,16 @@ import {
     { provide: KYC_PROVIDER, useClass: MockKycProvider },
     { provide: LOGISTICS_PROVIDER, useClass: MockLogisticsProvider },
     { provide: PRICE_ORACLE, useClass: MockPriceOracle },
-    { provide: STORAGE_PROVIDER, useClass: MockStorageProvider },
+    {
+      provide: STORAGE_PROVIDER,
+      useFactory: async () => {
+        if (process.env.STORAGE_MODE === 'filesystem') {
+          const { FileSystemStorageProvider } = await import('./infrastructure/adapters/filesystem-storage.provider');
+          return new FileSystemStorageProvider();
+        }
+        return new MockStorageProvider();
+      }
+    },
     {
       provide: BLOCKCHAIN_GATEWAY,
       useFactory: () => {

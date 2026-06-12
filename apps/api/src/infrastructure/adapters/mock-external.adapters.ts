@@ -4,19 +4,49 @@ import { KycStatus, ShipmentStatus } from '../../domain/enums';
 import {
   BlockchainConfig,
   BlockchainGateway,
+  GatewayTransactionResponse,
   KycProvider,
   LogisticsProvider,
   NotificationGateway,
   PriceOracle,
-  StorageProvider
+  StorageProvider,
+  WalletExecutionResponse
 } from '../../application/ports/external-services';
 
 @Injectable()
 export class MockKycProvider implements KycProvider {
   async verifyWalletOwner(userId: string, walletAddress: string) {
+    const normalizedWallet = walletAddress.toLowerCase();
+    const rejectedWallets = new Set(
+      (process.env.KYC_REJECTED_WALLETS ?? '')
+        .split(',')
+        .map((value) => value.trim().toLowerCase())
+        .filter(Boolean)
+    );
+    const reviewWallets = new Set(
+      (process.env.KYC_REVIEW_WALLETS ?? '')
+        .split(',')
+        .map((value) => value.trim().toLowerCase())
+        .filter(Boolean)
+    );
+
+    if (rejectedWallets.has(normalizedWallet)) {
+      return {
+        status: KycStatus.Rejected,
+        reference: `sandbox-kyc:rejected:${userId}:${normalizedWallet}`
+      };
+    }
+
+    if (reviewWallets.has(normalizedWallet)) {
+      return {
+        status: KycStatus.Pending,
+        reference: `sandbox-kyc:review:${userId}:${normalizedWallet}`
+      };
+    }
+
     return {
       status: KycStatus.Verified,
-      reference: `mock-kyc:${userId}:${walletAddress.toLowerCase()}`
+      reference: `sandbox-kyc:verified:${userId}:${normalizedWallet}`
     };
   }
 }
@@ -51,7 +81,7 @@ export class MockStorageProvider implements StorageProvider {
   async storeEvidence(input: { assetId: string; fileName: string; bytesBase64: string }) {
     const contentHash = createHash('sha256').update(input.bytesBase64).digest('hex');
     return {
-      uri: `ipfs://mock/${input.assetId}/${contentHash}-${input.fileName}`,
+      uri: `mock-object://${input.assetId}/${contentHash}-${input.fileName}`,
       contentHash
     };
   }
@@ -59,7 +89,7 @@ export class MockStorageProvider implements StorageProvider {
 
 @Injectable()
 export class MockBlockchainGateway implements BlockchainGateway {
-  async prepareLoanDisbursement() {
+  async prepareLoanDisbursement(): Promise<GatewayTransactionResponse> {
     return { txHash: `0x${randomUUID().replace(/-/g, '').padEnd(64, '0')}` };
   }
 
@@ -78,7 +108,7 @@ export class MockBlockchainGateway implements BlockchainGateway {
     estimatedValue: number;
     ltvBps: number;
     interestAprBps: number;
-  }) {
+  }): Promise<{ txHash: string }> {
     return { txHash: `0x${randomUUID().replace(/-/g, '').padEnd(64, '0')}` };
   }
 
@@ -96,7 +126,7 @@ export class MockBlockchainGateway implements BlockchainGateway {
     sellerWallet: string;
     price: number;
     isConsigned: boolean;
-  }) {
+  }): Promise<GatewayTransactionResponse> {
     return { txHash: `0x${randomUUID().replace(/-/g, '').padEnd(64, '0')}` };
   }
 
@@ -114,7 +144,7 @@ export class MockBlockchainGateway implements BlockchainGateway {
     buyerWallet: string;
     downPayment: number;
     monthsDuration: number;
-  }) {
+  }): Promise<GatewayTransactionResponse> {
     return { txHash: `0x${randomUUID().replace(/-/g, '').padEnd(64, '0')}` };
   }
 
@@ -131,8 +161,8 @@ export class MockBlockchainGateway implements BlockchainGateway {
     assetId: string;
     buyerWallet: string;
     installmentAmount: bigint;
-  }) {
-    return { status: 'MOCK_OK', actions: [] };
+  }): Promise<WalletExecutionResponse> {
+    return { status: 'AWAITING_WALLET_EXECUTION', actions: [] };
   }
 
   async verifyLayawayInstallmentPaid(_input: {
@@ -150,7 +180,7 @@ export class MockBlockchainGateway implements BlockchainGateway {
     ownerWallet: string;
     totalShares: number;
     targetPrice: number;
-  }) {
+  }): Promise<GatewayTransactionResponse> {
     return { txHash: `0x${randomUUID().replace(/-/g, '').padEnd(64, '0')}` };
   }
 
@@ -169,7 +199,7 @@ export class MockBlockchainGateway implements BlockchainGateway {
     buyerWallet: string;
     sharesToBuy: number;
     pricePerShare: number;
-  }) {
+  }): Promise<GatewayTransactionResponse> {
     return { txHash: `0x${randomUUID().replace(/-/g, '').padEnd(64, '0')}` };
   }
 
@@ -186,7 +216,7 @@ export class MockBlockchainGateway implements BlockchainGateway {
   async prepareRedeemAsset(input: {
     assetId: string;
     redeemerWallet: string;
-  }) {
+  }): Promise<GatewayTransactionResponse> {
     return { txHash: `0x${randomUUID().replace(/-/g, '').padEnd(64, '0')}` };
   }
 
