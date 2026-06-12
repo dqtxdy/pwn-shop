@@ -54,10 +54,13 @@ import {
 } from '../dto/pawn.dto';
 import {
   BlockchainGateway,
+  GatewayTransactionResponse,
   KycProvider,
+  LayawayWalletExecutionResponse,
   LogisticsProvider,
   PriceOracle,
-  StorageProvider
+  StorageProvider,
+  WalletExecutionResponse
 } from '../ports/external-services';
 import { PawnRepository } from '../ports/pawn-repository';
 
@@ -71,6 +74,22 @@ export class PawnWorkflowService {
     @Inject(STORAGE_PROVIDER) private readonly storageProvider: StorageProvider,
     @Inject(BLOCKCHAIN_GATEWAY) private readonly blockchainGateway: BlockchainGateway
   ) {}
+
+  private requirePreparedTx(response: GatewayTransactionResponse | WalletExecutionResponse): string {
+    if ('txHash' in response && response.txHash) {
+      return response.txHash;
+    }
+    throw new BadRequestException('Blockchain gateway did not return a transaction hash');
+  }
+
+  private requireWalletExecution(
+    response: GatewayTransactionResponse | WalletExecutionResponse
+  ): WalletExecutionResponse {
+    if ('actions' in response && response.status === 'AWAITING_WALLET_EXECUTION') {
+      return response;
+    }
+    throw new BadRequestException('Blockchain gateway did not return wallet actions');
+  }
 
   async requestKyc(userId: string, walletAddress: string) {
     const result = await this.kycProvider.verifyWalletOwner(userId, walletAddress);
@@ -238,7 +257,7 @@ export class PawnWorkflowService {
     return loan;
   }
 
-  async acceptLoan(loanId: string, dto: AcceptLoanDto, actor?: { id: string; role: UserRole }): Promise<Loan | { status: string; actions: any[] }> {
+  async acceptLoan(loanId: string, dto: AcceptLoanDto, actor?: { id: string; role: UserRole }): Promise<Loan | WalletExecutionResponse> {
     const loan = await this.requireLoan(loanId);
     if (actor && actor.role === UserRole.Customer) {
       if (loan.borrowerId !== actor.id) {
@@ -254,15 +273,16 @@ export class PawnWorkflowService {
         principal: loan.principal,
         durationDays: loan.durationDays
       });
+      const txHash = this.requirePreparedTx(tx);
       loan.status = LoanStatus.Active;
-      loan.contractTxHash = tx.txHash;
+      loan.contractTxHash = txHash;
       loan.dueAt = new Date(Date.now() + loan.durationDays * 24 * 60 * 60 * 1000);
       await this.repository.saveLoan(loan);
 
       const asset = await this.requireAsset(loan.assetId);
       asset.status = AssetStatus.LoanActive;
       await this.repository.saveAsset(asset);
-      await this.audit(loan.borrowerId, 'LOAN_ACCEPTED', 'Loan', loan.id, { txHash: tx.txHash });
+      await this.audit(loan.borrowerId, 'LOAN_ACCEPTED', 'Loan', loan.id, { txHash });
       return loan;
     } else {
       if (!dto.txHash) {
@@ -272,10 +292,7 @@ export class PawnWorkflowService {
           principal: loan.principal,
           durationDays: loan.durationDays
         });
-        return {
-          status: 'AWAITING_WALLET_EXECUTION',
-          actions: result.actions ?? []
-        };
+        return this.requireWalletExecution(result);
       }
 
       try {
@@ -339,7 +356,7 @@ export class PawnWorkflowService {
     return repayment;
   }
 
-  async createListing(dto: CreateListingDto, actor?: { id: string; role: UserRole }): Promise<Listing | { status: string; actions: any[] }> {
+  async createListing(dto: CreateListingDto, actor?: { id: string; role: UserRole }): Promise<Listing | WalletExecutionResponse> {
     const config = this.blockchainGateway.getBlockchainConfig();
     const isAnvil = config.mode === 'anvil';
     if (isAnvil && dto.isProtocolOwned) {
@@ -405,10 +422,7 @@ export class PawnWorkflowService {
           price: dto.price,
           isConsigned: true
         });
-        return {
-          status: 'AWAITING_WALLET_EXECUTION',
-          actions: result.actions ?? []
-        };
+        return this.requireWalletExecution(result);
       }
 
       try {
@@ -452,7 +466,7 @@ export class PawnWorkflowService {
     return this.repository.listListings();
   }
 
-  async createLayaway(dto: CreateLayawayDto, actor?: { id: string; role: UserRole }): Promise<Layaway | { status: string; actions: any[] }> {
+  async createLayaway(dto: CreateLayawayDto, actor?: { id: string; role: UserRole }): Promise<Layaway | WalletExecutionResponse> {
     if (actor && actor.role === UserRole.Customer) {
       dto.buyerId = actor.id;
     }
@@ -508,10 +522,7 @@ export class PawnWorkflowService {
           downPayment: dto.downPayment,
           monthsDuration: dto.monthsDuration
         });
-        return {
-          status: 'AWAITING_WALLET_EXECUTION',
-          actions: result.actions ?? []
-        };
+        return this.requireWalletExecution(result);
       }
 
       try {
@@ -561,7 +572,7 @@ export class PawnWorkflowService {
     return layaway;
   }
 
-  async payLayaway(layawayId: string, dto: PayLayawayDto, actor?: { id: string; role: UserRole }): Promise<Layaway | { status: string; actions: any[]; nextInstallmentAmountWei?: string; nextInstallmentAmountDisplay?: string }> {
+  async payLayaway(layawayId: string, dto: PayLayawayDto, actor?: { id: string; role: UserRole }): Promise<Layaway | LayawayWalletExecutionResponse> {
     const layaway = await this.repository.findLayaway(layawayId);
     if (!layaway) throw new NotFoundException('Layaway not found');
     if (actor && actor.role === UserRole.Customer) {
@@ -622,8 +633,7 @@ export class PawnWorkflowService {
           installmentAmount: requiredAmountWei
         });
         return {
-          status: 'AWAITING_WALLET_EXECUTION',
-          actions: result.actions ?? [],
+          ...this.requireWalletExecution(result),
           nextInstallmentAmountWei: requiredAmountWei.toString(),
           nextInstallmentAmountDisplay: ethers.formatEther(requiredAmountWei)
         };
@@ -792,7 +802,7 @@ export class PawnWorkflowService {
     }
   }
 
-  async fractionalizeAsset(dto: FractionalizeAssetDto, actorId: string): Promise<FractionalAsset | { status: string; actions: any[] }> {
+  async fractionalizeAsset(dto: FractionalizeAssetDto, actorId: string): Promise<FractionalAsset | WalletExecutionResponse> {
     const config = this.blockchainGateway.getBlockchainConfig();
     const isAnvil = config.mode === 'anvil';
 
@@ -857,10 +867,7 @@ export class PawnWorkflowService {
           totalShares: dto.totalShares,
           targetPrice: dto.targetPrice
         });
-        return {
-          status: 'AWAITING_WALLET_EXECUTION',
-          actions: result.actions ?? []
-        };
+        return this.requireWalletExecution(result);
       }
 
       try {
@@ -909,7 +916,7 @@ export class PawnWorkflowService {
     return fractionalAsset;
   }
 
-  async buyFractions(dto: BuyFractionsDto, buyerId: string): Promise<FractionalAsset | { status: string; actions: any[] }> {
+  async buyFractions(dto: BuyFractionsDto, buyerId: string): Promise<FractionalAsset | WalletExecutionResponse> {
     const config = this.blockchainGateway.getBlockchainConfig();
     const isAnvil = config.mode === 'anvil';
 
@@ -948,10 +955,7 @@ export class PawnWorkflowService {
           sharesToBuy: dto.sharesToBuy,
           pricePerShare: fracAsset.pricePerShare
         });
-        return {
-          status: 'AWAITING_WALLET_EXECUTION',
-          actions: result.actions ?? []
-        };
+        return this.requireWalletExecution(result);
       }
 
       try {
@@ -996,7 +1000,7 @@ export class PawnWorkflowService {
     return fracAsset;
   }
 
-  async redeemAsset(dto: RedeemAssetDto, redeemerId: string): Promise<FractionalAsset | { status: string; actions: any[] }> {
+  async redeemAsset(dto: RedeemAssetDto, redeemerId: string): Promise<FractionalAsset | WalletExecutionResponse> {
     const config = this.blockchainGateway.getBlockchainConfig();
     const isAnvil = config.mode === 'anvil';
 
@@ -1025,10 +1029,7 @@ export class PawnWorkflowService {
           assetId: dto.assetId,
           redeemerWallet: redeemerWallet.address
         });
-        return {
-          status: 'AWAITING_WALLET_EXECUTION',
-          actions: result.actions ?? []
-        };
+        return this.requireWalletExecution(result);
       }
 
       try {

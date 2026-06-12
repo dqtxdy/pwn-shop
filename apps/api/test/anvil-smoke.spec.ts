@@ -6,6 +6,7 @@ import { BLOCKCHAIN_GATEWAY, PAWN_REPOSITORY } from '../src/common/tokens';
 import { AnvilBlockchainGateway } from '../src/infrastructure/adapters/anvil-blockchain.gateway';
 import { UserRole, AssetStatus } from '../src/domain/enums';
 import { PawnRepository } from '../src/application/ports/pawn-repository';
+import { WalletExecutionResponse } from '../src/application/ports/external-services';
 import { ethers } from 'ethers';
 
 const ANVIL_RPC = 'http://127.0.0.1:8545';
@@ -371,7 +372,7 @@ async function waitReceiptBounded(
     });
     expect(acceptRes).toBeDefined();
     expect('status' in acceptRes && acceptRes.status === 'AWAITING_WALLET_EXECUTION').toBe(true);
-    const { actions } = acceptRes as { status: string; actions: any[] };
+    const { actions } = acceptRes as WalletExecutionResponse;
     expect(actions).toHaveLength(2);
 
     await executeActionWithDiagnostics(aliceKey, actions[0], 'Alice Approve NFT Loan');

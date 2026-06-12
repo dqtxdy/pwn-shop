@@ -38,13 +38,35 @@ export interface BlockchainConfig {
   isDeploymentArtifactLoaded: boolean;
 }
 
+export type WalletExecutionStatus = 'AWAITING_WALLET_EXECUTION';
+
+export interface WalletAction {
+  to: string;
+  calldata: string;
+  description: string;
+}
+
+export interface WalletExecutionResponse {
+  status: WalletExecutionStatus;
+  actions: WalletAction[];
+}
+
+export interface GatewayTransactionResponse {
+  txHash?: string;
+}
+
+export interface LayawayWalletExecutionResponse extends WalletExecutionResponse {
+  nextInstallmentAmountWei?: string;
+  nextInstallmentAmountDisplay?: string;
+}
+
 export interface BlockchainGateway {
   prepareLoanDisbursement(input: {
     assetId: string;
     borrowerWallet: string;
     principal: number;
     durationDays: number;
-  }): Promise<{ txHash?: string; status?: string; actions?: any[] }>;
+  }): Promise<GatewayTransactionResponse | WalletExecutionResponse>;
   recordRepayment(input: {
     loanId: string;
     amount: number;
@@ -69,7 +91,7 @@ export interface BlockchainGateway {
     sellerWallet: string;
     price: number;
     isConsigned: boolean;
-  }): Promise<{ txHash?: string; status?: string; actions?: any[] }>;
+  }): Promise<GatewayTransactionResponse | WalletExecutionResponse>;
   verifyListingCreated(
     txHash: string,
     assetId: string,
@@ -81,7 +103,7 @@ export interface BlockchainGateway {
     buyerWallet: string;
     downPayment: number;
     monthsDuration: number;
-  }): Promise<{ txHash?: string; status?: string; actions?: any[] }>;
+  }): Promise<GatewayTransactionResponse | WalletExecutionResponse>;
   verifyLayawayStarted(
     txHash: string,
     assetId: string,
@@ -92,7 +114,7 @@ export interface BlockchainGateway {
     assetId: string;
     buyerWallet: string;
     installmentAmount: bigint;
-  }): Promise<{ status?: string; actions?: any[] }>;
+  }): Promise<WalletExecutionResponse>;
   verifyLayawayInstallmentPaid(input: {
     txHash: string;
     assetId: string;
@@ -105,7 +127,7 @@ export interface BlockchainGateway {
     ownerWallet: string;
     totalShares: number;
     targetPrice: number;
-  }): Promise<{ txHash?: string; status?: string; actions?: any[] }>;
+  }): Promise<GatewayTransactionResponse | WalletExecutionResponse>;
   verifyAssetFractionalized(input: {
     txHash: string;
     assetId: string;
@@ -118,7 +140,7 @@ export interface BlockchainGateway {
     buyerWallet: string;
     sharesToBuy: number;
     pricePerShare: number;
-  }): Promise<{ txHash?: string; status?: string; actions?: any[] }>;
+  }): Promise<GatewayTransactionResponse | WalletExecutionResponse>;
   verifyFractionsPurchased(input: {
     txHash: string;
     assetId: string;
@@ -129,7 +151,7 @@ export interface BlockchainGateway {
   prepareRedeemAsset(input: {
     assetId: string;
     redeemerWallet: string;
-  }): Promise<{ txHash?: string; status?: string; actions?: any[] }>;
+  }): Promise<GatewayTransactionResponse | WalletExecutionResponse>;
   verifyAssetRedeemed(input: {
     txHash: string;
     assetId: string;

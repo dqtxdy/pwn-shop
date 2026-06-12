@@ -2,7 +2,11 @@ import { Injectable, OnModuleDestroy } from '@nestjs/common';
 import * as fs from 'fs';
 import * as path from 'path';
 import { randomUUID } from 'crypto';
-import { BlockchainConfig, BlockchainGateway } from '../../application/ports/external-services';
+import {
+  BlockchainConfig,
+  BlockchainGateway,
+  WalletExecutionResponse
+} from '../../application/ports/external-services';
 
 interface DeploymentArtifact {
   chainId: number;
@@ -124,7 +128,7 @@ export class AnvilBlockchainGateway implements BlockchainGateway, OnModuleDestro
     borrowerWallet: string;
     principal: number;
     durationDays: number;
-  }): Promise<{ txHash?: string; status?: string; actions?: any[] }> {
+  }): Promise<WalletExecutionResponse> {
     if (!this.artifact) {
       throw new Error('Anvil deployment artifact is missing');
     }
@@ -499,7 +503,7 @@ export class AnvilBlockchainGateway implements BlockchainGateway, OnModuleDestro
     sellerWallet: string;
     price: number;
     isConsigned: boolean;
-  }): Promise<{ txHash?: string; status?: string; actions?: any[] }> {
+  }): Promise<WalletExecutionResponse> {
     if (!this.artifact) {
       throw new Error('Anvil deployment artifact is missing');
     }
@@ -611,7 +615,7 @@ export class AnvilBlockchainGateway implements BlockchainGateway, OnModuleDestro
     buyerWallet: string;
     downPayment: number;
     monthsDuration: number;
-  }): Promise<{ txHash?: string; status?: string; actions?: any[] }> {
+  }): Promise<WalletExecutionResponse> {
     if (!this.artifact) {
       throw new Error('Anvil deployment artifact is missing');
     }
@@ -722,7 +726,7 @@ export class AnvilBlockchainGateway implements BlockchainGateway, OnModuleDestro
     assetId: string;
     buyerWallet: string;
     installmentAmount: bigint;
-  }): Promise<{ status?: string; actions?: any[] }> {
+  }): Promise<WalletExecutionResponse> {
     if (!this.artifact) {
       throw new Error('Anvil deployment artifact is missing');
     }
@@ -865,7 +869,7 @@ export class AnvilBlockchainGateway implements BlockchainGateway, OnModuleDestro
     ownerWallet: string;
     totalShares: number;
     targetPrice: number;
-  }): Promise<{ status?: string; actions?: any[] }> {
+  }): Promise<WalletExecutionResponse> {
     if (!this.artifact) {
       throw new Error('Anvil deployment artifact is missing');
     }
@@ -1009,7 +1013,7 @@ export class AnvilBlockchainGateway implements BlockchainGateway, OnModuleDestro
     buyerWallet: string;
     sharesToBuy: number;
     pricePerShare: number;
-  }): Promise<{ status?: string; actions?: any[] }> {
+  }): Promise<WalletExecutionResponse> {
     if (!this.artifact) {
       throw new Error('Anvil deployment artifact is missing');
     }
@@ -1123,7 +1127,7 @@ export class AnvilBlockchainGateway implements BlockchainGateway, OnModuleDestro
   async prepareRedeemAsset(input: {
     assetId: string;
     redeemerWallet: string;
-  }): Promise<{ status?: string; actions?: any[] }> {
+  }): Promise<WalletExecutionResponse> {
     if (!this.artifact) {
       throw new Error('Anvil deployment artifact is missing');
     }

@@ -276,7 +276,7 @@ export interface WalletAction {
 }
 
 export interface WalletExecutionResponse {
-  status: string;
+  status: 'AWAITING_WALLET_EXECUTION';
   actions: WalletAction[];
 }
 
