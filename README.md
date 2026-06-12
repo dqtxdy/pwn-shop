@@ -80,6 +80,7 @@ The two switches are independent:
 
 - `PERSISTENCE_MODE=memory` or `PERSISTENCE_MODE=postgres`
 - `BLOCKCHAIN_MODE=mock` or `BLOCKCHAIN_MODE=anvil`
+- `STORAGE_MODE=mock` or `STORAGE_MODE=filesystem`
 
 ## Run The Default Mock Demo
 
@@ -105,6 +106,30 @@ http://localhost:5173
 
 In this mode, the API uses an in-memory repository and the blockchain adapter returns demo
 transaction responses. No Anvil node, MetaMask setup, or PostgreSQL container is required.
+
+## Evidence Storage Modes
+
+The system keeps large evidence files off-chain. Contracts store transaction state and
+events; the backend stores evidence metadata, URI, and content hash.
+
+Mock storage is the default:
+
+```bash
+STORAGE_MODE=mock
+```
+
+Filesystem storage is the free production-like local option:
+
+```bash
+STORAGE_MODE=filesystem
+STORAGE_LOCAL_DIR=.local-object-storage/evidence
+STORAGE_MAX_BYTES=10485760
+```
+
+Filesystem mode writes decoded evidence bytes outside the database and returns a
+`local-object://...` URI plus a SHA-256 content hash. Use it when you want to prove that
+the architecture is ready for S3-compatible object storage without paying for cloud
+services during the capstone.
 
 ## Run With PostgreSQL Persistence
 
@@ -246,6 +271,12 @@ Implemented on-chain flows in Anvil mode:
 
 ## Validation Commands
 
+Repository readiness scan:
+
+```bash
+npm run check:readiness
+```
+
 Backend:
 
 ```bash
@@ -309,4 +340,9 @@ off-chain evidence, persistence, and workflow state.
 - Testing report: `docs/testing-report.md`
 - Architecture notes: `docs/architecture/README.md`
 - Requirement traceability: `docs/architecture/traceability.md`
+- Security policy: `SECURITY.md`
+- Security self-assessment: `docs/security-self-assessment.md`
+- Compliance playbook: `docs/compliance-playbook.md`
+- Environment validation: `.env.validation.md`
+- Contract timing assumptions: `docs/contract-time-assumptions.md`
 - Development walkthrough: `walkthrough.md`

@@ -57,6 +57,22 @@ The system demonstrates the **Dependency Inversion Principle (DIP)** (the "D" in
 
 ---
 
+## External Provider Adapter Boundaries
+
+The same DIP pattern is used for non-blockchain integrations:
+
+| Port | Local Adapter | Production Replacement |
+| --- | --- | --- |
+| `KycProvider` | Configurable sandbox outcomes through `KYC_REVIEW_WALLETS` and `KYC_REJECTED_WALLETS` | Contracted KYC/KYB and sanctions provider |
+| `StorageProvider` | Mock object store or `FileSystemStorageProvider` using `STORAGE_MODE=filesystem` | S3-compatible object storage with encryption, lifecycle rules, and access logs |
+| `LogisticsProvider` | Mock FedEx-style tracking codes | Real courier API |
+| `NotificationGateway` | Local mock notifications | Email/SMS provider |
+| `PriceOracle` | Mock reference quotes | Appraisal/pricing data provider |
+
+The important design point is that `PawnWorkflowService` depends on provider interfaces, not concrete vendor SDKs. This keeps the capstone inexpensive while still showing how real integrations can be swapped in without rewriting domain logic.
+
+---
+
 ## Mock Mode vs. Local Anvil Mode
 
 The application supports two blockchain gateway modes selected by the `BLOCKCHAIN_MODE` environment variable.
@@ -85,6 +101,7 @@ In the current implementation:
    - Fraction purchase via `ERC20.approve` + `buyFractions` on `PawnProtocol`.
    - Physical asset redemption via `redeemAsset` on `PawnProtocol` (which burns the required 100% fraction token supply and transfers the underlying NFT to the redeemer).
    - Fully verified with active on-chain smoke tests in `apps/api/test/anvil-smoke.spec.ts`.
+6. **Time Assumptions**: Loan, layaway, and fractionalization deadline logic uses day-scale `block.timestamp` checks. The assumptions and production hardening path are documented in `docs/contract-time-assumptions.md`.
 
 ---
 

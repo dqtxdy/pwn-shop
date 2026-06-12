@@ -1,6 +1,6 @@
-# Testing Report: Local Anvil Integration, Loans, Layaways, & Fractionalization
+# Testing Report: Platform Hardening, Local Anvil Integration, and Persistence
 
-This report documents the testing strategy, newly added test coverage, and validation procedures implemented across the application, highlighting the recent additions for **Phase 2C-B (Fractionalization Flow)**.
+This report documents the testing strategy, current validation commands, and regression gates across the application, including Phase 3C platform hardening, low-cost production-readiness checks, real Local Anvil flows, PostgreSQL repository verification, and frontend E2E coverage.
 
 ## Testing Strategy
 
@@ -12,7 +12,7 @@ To ensure high reliability, we implemented:
 
 ---
 
-## Newly Added Tests (Phase 2C-B)
+## Recently Added Tests and Hardening
 
 We updated and expanded the test suite in the backend API and frontend web client covering:
 
@@ -47,9 +47,23 @@ We updated and expanded the test suite in the backend API and frontend web clien
   - Cross-customer safety prevents one customer from acting as another (e.g. uploading evidence to another customer's asset).
   - Staff/admin protected endpoints remain accessible to correct roles (e.g. Staff creating appraisals, Admin viewing protocol dashboard).
 
+### 6. External Adapter Hardening (`apps/api/test/external-adapters.spec.ts`)
+- Added deterministic KYC sandbox tests for verified, pending-review, and rejected wallet outcomes.
+- Added local filesystem evidence storage tests proving decoded bytes are stored outside the database.
+- Verifies SHA-256 content hashes, `local-object://...` URIs, traversal-safe path sanitization, invalid base64 rejection, and upload-size rejection.
+
 ---
 
 ## Running Verification Commands
+
+### Repository Readiness Scan
+Run the lightweight readiness gate:
+```bash
+npm run check:readiness
+```
+**Output:** `Readiness check passed.`
+
+The scan blocks stale local-file-scheme documentation links, fake storage mock URIs in source, browser-side random workflow IDs, and loose wallet action arrays in application code.
 
 ### Smart Contracts (Foundry)
 Run smart contract tests:
@@ -66,7 +80,7 @@ Run type checking and unit/integration tests:
 npm --workspace apps/api run typecheck
 npm --workspace apps/api test
 ```
-**Output:** `18 skipped, 91 passed, 109 total` (12 Postgres tests and 6 Anvil smoke tests are skipped by default when dynamic configuration defaults are used and `POSTGRES_TESTS` is omitted).
+**Output:** `18 skipped, 97 passed, 115 total` (12 Postgres tests and 6 Anvil smoke tests are skipped by default when dynamic configuration defaults are used and `POSTGRES_TESTS` is omitted).
 
 ### Postgres Integration Tests (Opt-In)
 To verify Postgres persistence against a live DB, start the database service and run the tests:

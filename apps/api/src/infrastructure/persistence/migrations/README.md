@@ -1,101 +1,58 @@
 # TypeORM Database Migrations Guide
 
-During local development and demonstrations, the application uses auto-schema synchronization (`synchronize: true`) to dynamically match the PostgreSQL schema with TypeORM Entity structures. 
+The API supports two PostgreSQL schema modes:
 
-For production and staging deployments, **schema synchronization must be disabled** to prevent data loss. Version-controlled database migrations should be used instead.
+- Local demo mode: `DB_SYNCHRONIZE=true` may be used with throwaway data while developing.
+- Production-like mode: `DB_SYNCHRONIZE=false` and `DB_MIGRATIONS_RUN=true` must be used so schema changes are versioned.
 
----
+Do not enable automatic synchronization for staging or production data. It can mutate schema state without a reviewed migration.
 
-## 1. Preparing for Production (Transition Path)
+## Environment
 
-To prepare for a production environment:
-1. In `PostgresPawnRepository.initialize()` (or database configuration), change `synchronize: true` to `synchronize: false`.
-2. Add a `migrations` property pointing to compiled migrations, and enable `migrationsRun: true` so migrations run automatically on startup:
-   ```typescript
-   migrations: [
-     // List of migration classes
-   ],
-   migrationsRun: true,
-   ```
+```bash
+PERSISTENCE_MODE=postgres
+DB_HOST=localhost
+DB_PORT=5432
+DB_USERNAME=postgres
+DB_PASSWORD=postgres
+DB_DATABASE=pwn_shop
+DB_SYNCHRONIZE=false
+DB_MIGRATIONS_RUN=true
+```
 
----
+The static TypeORM CLI entry point is already provided at `apps/api/src/infrastructure/persistence/data-source.ts`.
 
-## 2. Generating Migrations (CLI)
+## Generate a Migration
 
-TypeORM can automatically generate migration files by comparing your current local entity models with the current schema of a running database.
+Run this from `apps/api` after updating entity definitions and starting PostgreSQL:
 
-### Command for generation:
 ```bash
 npx typeorm-ts-node-commonjs migration:generate \
   -d src/infrastructure/persistence/data-source.ts \
-  src/infrastructure/persistence/migrations/InitialSchema
+  src/infrastructure/persistence/migrations/DescriptiveMigrationName
 ```
 
-### Command for running migrations manually:
+Review the generated SQL before committing it.
+
+## Run Migrations
+
 ```bash
 npx typeorm-ts-node-commonjs migration:run \
   -d src/infrastructure/persistence/data-source.ts
 ```
 
-### Command for reverting last migration:
+## Revert the Last Migration
+
 ```bash
 npx typeorm-ts-node-commonjs migration:revert \
   -d src/infrastructure/persistence/data-source.ts
 ```
 
----
+## Verification
 
-## 3. Data Source Template for Migration CLI
+Use the repository contract tests to prove the PostgreSQL implementation still behaves like the in-memory repository:
 
-For the TypeORM CLI to run, it requires a static `DataSource` instance. Create a file `apps/api/src/infrastructure/persistence/data-source.ts`:
-
-```typescript
-import { DataSource } from 'typeorm';
-import {
-  UserEntity,
-  WalletEntity,
-  KycVerificationEntity,
-  AssetEntity,
-  EvidenceFileEntity,
-  ShipmentEntity,
-  AppraisalEntity,
-  LoanEntity,
-  RepaymentEntity,
-  ListingEntity,
-  LayawayEntity,
-  FractionalPositionEntity,
-  FractionalAssetEntity,
-  DisputeEntity,
-  AuditEventEntity,
-  BlockchainTransactionEntity
-} from './entities';
-
-export default new DataSource({
-  type: 'postgres',
-  host: process.env.DB_HOST || 'localhost',
-  port: parseInt(process.env.DB_PORT || '5432', 10),
-  username: process.env.DB_USERNAME || 'postgres',
-  password: process.env.DB_PASSWORD || 'postgres',
-  database: process.env.DB_DATABASE || 'pwn_shop',
-  entities: [
-    UserEntity,
-    WalletEntity,
-    KycVerificationEntity,
-    AssetEntity,
-    EvidenceFileEntity,
-    ShipmentEntity,
-    AppraisalEntity,
-    LoanEntity,
-    RepaymentEntity,
-    ListingEntity,
-    LayawayEntity,
-    FractionalPositionEntity,
-    FractionalAssetEntity,
-    DisputeEntity,
-    AuditEventEntity,
-    BlockchainTransactionEntity
-  ],
-  synchronize: false,
-  migrations: ['src/infrastructure/persistence/migrations/*.ts'],
-});
+```bash
+npm run db:up
+npm run test:postgres
 ```
