@@ -1,9 +1,11 @@
-import { DataSource } from 'typeorm';
+import { DataSource, EntityManager, EntityTarget, ObjectLiteral, Repository } from 'typeorm';
+import { AsyncLocalStorage } from 'async_hooks';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
 import { OnApplicationShutdown } from '@nestjs/common';
 import { PawnRepository } from '../../../application/ports/pawn-repository';
+
 import {
   Appraisal,
   Asset,
@@ -52,11 +54,35 @@ import {
   BlockchainTransactionEntity
 } from '../entities';
 import { InitialSchema1717580000000 } from '../migrations/1717580000000-InitialSchema';
+import { StrictSqlPersistence1717580000001 } from '../migrations/1717580000001-StrictSqlPersistence';
 
 export class PostgresPawnRepository implements PawnRepository, OnApplicationShutdown {
   private dataSource!: DataSource;
+  private static readonly txStorage = new AsyncLocalStorage<EntityManager>();
+
+  private getRepository<Entity extends ObjectLiteral>(entityClass: EntityTarget<Entity>): Repository<Entity> {
+    const transactionalEntityManager = PostgresPawnRepository.txStorage.getStore();
+    if (transactionalEntityManager) {
+      return transactionalEntityManager.getRepository(entityClass);
+    }
+    return this.dataSource.getRepository(entityClass);
+  }
+
+  async runInTransaction<T>(fn: (repo: PawnRepository) => Promise<T>): Promise<T> {
+    if (!this.dataSource || !this.dataSource.isInitialized) {
+      throw new Error('Database not initialized');
+    }
+    const activeManager = PostgresPawnRepository.txStorage.getStore();
+    if (activeManager) {
+      return fn(this);
+    }
+    return this.dataSource.transaction(async (entityManager) => {
+      return PostgresPawnRepository.txStorage.run(entityManager, () => fn(this));
+    });
+  }
 
   async initialize(): Promise<void> {
+
     const runMigrations = process.env.DB_MIGRATIONS_RUN === 'true';
     const synchronize = process.env.DB_SYNCHRONIZE !== 'false' && !runMigrations;
 
@@ -86,7 +112,7 @@ export class PostgresPawnRepository implements PawnRepository, OnApplicationShut
         BlockchainTransactionEntity
       ],
       synchronize,
-      migrations: [InitialSchema1717580000000],
+      migrations: [InitialSchema1717580000000, StrictSqlPersistence1717580000001],
       migrationsRun: runMigrations,
       logging: false,
     });
@@ -111,17 +137,46 @@ export class PostgresPawnRepository implements PawnRepository, OnApplicationShut
     }
     const entities = this.dataSource.entityMetadatas;
     for (const entity of entities) {
-      const repository = this.dataSource.getRepository(entity.name);
+      const repository = this.getRepository(entity.name);
       await repository.query(`TRUNCATE TABLE "${entity.tableName}" CASCADE;`);
     }
     await this.initializeSeededDataIfNeeded();
   }
 
   private async initializeSeededDataIfNeeded(): Promise<void> {
-    const userRepo = this.dataSource.getRepository(UserEntity);
+    const userRepo = this.getRepository(UserEntity);
+
+    // Always ensure the system service-account exists — independently of DEMO_MODE.
+    // This row is required for FK columns that use 'system' as the actor.
+    const systemUser = await userRepo.findOne({ where: { id: 'system' } });
+    if (!systemUser) {
+      await userRepo.save({
+        id: 'system',
+        displayName: 'System Account',
+        role: UserRole.Admin,
+        kycStatus: KycStatus.Verified,
+        createdAt: new Date()
+      });
+    } else if (
+      systemUser.displayName !== 'System Account' ||
+      systemUser.role !== UserRole.Admin ||
+      systemUser.kycStatus !== KycStatus.Verified
+    ) {
+      await userRepo.save({
+        ...systemUser,
+        displayName: 'System Account',
+        role: UserRole.Admin,
+        kycStatus: KycStatus.Verified
+      });
+    }
+
+    if (process.env.DEMO_MODE !== 'true' && process.env.SEED_DEMO_DATA !== 'true') {
+      return;
+    }
     const userCount = await userRepo.count();
-    if (userCount > 0) {
-      return; // Already seeded
+    // userCount includes the system user, so only skip if MORE than just system exists
+    if (userCount > 1) {
+      return; // Already seeded with demo data
     }
 
     const now = new Date();
@@ -211,7 +266,7 @@ export class PostgresPawnRepository implements PawnRepository, OnApplicationShut
       w.address = w.address.toLowerCase();
     }
 
-    await this.dataSource.getRepository(WalletEntity).save(wallets);
+    await this.getRepository(WalletEntity).save(wallets);
 
     // 3. Load local-anvil tokenId Map if applicable
     let tokenIdMap: Record<string, number> = {};
@@ -299,7 +354,7 @@ export class PostgresPawnRepository implements PawnRepository, OnApplicationShut
         a.tokenId = String(tokenIdMap[a.id]);
       }
     }
-    await this.dataSource.getRepository(AssetEntity).save(assets);
+    await this.getRepository(AssetEntity).save(assets);
 
     // 5. Seed Shipments
     const shipments: Shipment[] = [
@@ -324,7 +379,7 @@ export class PostgresPawnRepository implements PawnRepository, OnApplicationShut
         updatedAt: new Date(now.getTime() - 23 * 3600000)
       }
     ];
-    await this.dataSource.getRepository(ShipmentEntity).save(shipments);
+    await this.getRepository(ShipmentEntity).save(shipments);
 
     // 6. Seed Appraisals
     const appraisals: Appraisal[] = [
@@ -352,7 +407,7 @@ export class PostgresPawnRepository implements PawnRepository, OnApplicationShut
         createdAt: new Date(now.getTime() - 22 * 3600000)
       });
     }
-    await this.dataSource.getRepository(AppraisalEntity).save(appraisals);
+    await this.getRepository(AppraisalEntity).save(appraisals);
 
     // 7. Seed Loans
     if (process.env.BLOCKCHAIN_MODE !== 'anvil') {
@@ -368,7 +423,7 @@ export class PostgresPawnRepository implements PawnRepository, OnApplicationShut
         dueAt: new Date(now.getTime() + 29 * 24 * 3600000),
         createdAt: new Date(now.getTime() - 22 * 3600000)
       };
-      await this.dataSource.getRepository(LoanEntity).save(loan);
+      await this.getRepository(LoanEntity).save(loan);
     }
 
     // 8. Seed Listings
@@ -381,7 +436,7 @@ export class PostgresPawnRepository implements PawnRepository, OnApplicationShut
       isProtocolOwned: true,
       createdAt: new Date(now.getTime() - 24 * 3600000)
     };
-    await this.dataSource.getRepository(ListingEntity).save(listing);
+    await this.getRepository(ListingEntity).save(listing);
 
     // 9. Seed Audit Events
     const events: AuditEvent[] = [
@@ -416,7 +471,7 @@ export class PostgresPawnRepository implements PawnRepository, OnApplicationShut
         createdAt: new Date(now.getTime() - 22 * 3600000)
       });
     }
-    await this.dataSource.getRepository(AuditEventEntity).save(events);
+    await this.getRepository(AuditEventEntity).save(events);
 
     // 10. Seed Evidence Files
     const evidenceFiles: EvidenceFile[] = [];
@@ -477,29 +532,29 @@ export class PostgresPawnRepository implements PawnRepository, OnApplicationShut
         });
       }
     }
-    await this.dataSource.getRepository(EvidenceFileEntity).save(evidenceFiles);
+    await this.getRepository(EvidenceFileEntity).save(evidenceFiles);
   }
 
   // --- PawnRepository Port Methods Implementation ---
 
   async saveUser(user: User): Promise<User> {
-    await this.dataSource.getRepository(UserEntity).save(user);
+    await this.getRepository(UserEntity).save(user);
     return user;
   }
 
   async findUserByWallet(address: string): Promise<User | undefined> {
-    const wallet = await this.dataSource.getRepository(WalletEntity).findOne({
+    const wallet = await this.getRepository(WalletEntity).findOne({
       where: { address: address.toLowerCase() }
     });
     if (!wallet) return undefined;
-    const user = await this.dataSource.getRepository(UserEntity).findOne({
+    const user = await this.getRepository(UserEntity).findOne({
       where: { id: wallet.userId }
     });
     return user || undefined;
   }
 
   async findUserById(id: string): Promise<User | undefined> {
-    const user = await this.dataSource.getRepository(UserEntity).findOne({
+    const user = await this.getRepository(UserEntity).findOne({
       where: { id }
     });
     return user || undefined;
@@ -507,42 +562,42 @@ export class PostgresPawnRepository implements PawnRepository, OnApplicationShut
 
   async saveWallet(wallet: Wallet): Promise<Wallet> {
     wallet.address = wallet.address.toLowerCase();
-    await this.dataSource.getRepository(WalletEntity).save(wallet);
+    await this.getRepository(WalletEntity).save(wallet);
     return wallet;
   }
 
   async saveKycVerification(verification: KycVerification): Promise<KycVerification> {
-    await this.dataSource.getRepository(KycVerificationEntity).save(verification);
+    await this.getRepository(KycVerificationEntity).save(verification);
     return verification;
   }
 
   async saveAsset(asset: Asset): Promise<Asset> {
-    await this.dataSource.getRepository(AssetEntity).save(asset);
+    await this.getRepository(AssetEntity).save(asset);
     return asset;
   }
 
   async findAsset(id: string): Promise<Asset | undefined> {
-    const asset = await this.dataSource.getRepository(AssetEntity).findOne({ where: { id } });
+    const asset = await this.getRepository(AssetEntity).findOne({ where: { id } });
     return asset || undefined;
   }
 
   async listAssets(): Promise<Asset[]> {
-    return this.dataSource.getRepository(AssetEntity).find();
+    return this.getRepository(AssetEntity).find();
   }
 
   async saveEvidence(file: EvidenceFile): Promise<EvidenceFile> {
-    await this.dataSource.getRepository(EvidenceFileEntity).save(file);
+    await this.getRepository(EvidenceFileEntity).save(file);
     return file;
   }
 
   async listEvidence(assetId: string): Promise<EvidenceFile[]> {
-    return this.dataSource.getRepository(EvidenceFileEntity).find({
+    return this.getRepository(EvidenceFileEntity).find({
       where: { assetId }
     });
   }
 
   async saveShipment(shipment: Shipment): Promise<Shipment> {
-    await this.dataSource.getRepository(ShipmentEntity).save(shipment);
+    await this.getRepository(ShipmentEntity).save(shipment);
     return shipment;
   }
 
@@ -551,7 +606,7 @@ export class PostgresPawnRepository implements PawnRepository, OnApplicationShut
     if (direction) {
       where.direction = direction;
     }
-    const shipments = await this.dataSource.getRepository(ShipmentEntity).find({
+    const shipments = await this.getRepository(ShipmentEntity).find({
       where,
       order: { updatedAt: 'DESC' }
     });
@@ -559,12 +614,12 @@ export class PostgresPawnRepository implements PawnRepository, OnApplicationShut
   }
 
   async saveAppraisal(appraisal: Appraisal): Promise<Appraisal> {
-    await this.dataSource.getRepository(AppraisalEntity).save(appraisal);
+    await this.getRepository(AppraisalEntity).save(appraisal);
     return appraisal;
   }
 
   async findLatestAppraisalByAssetId(assetId: string): Promise<Appraisal | undefined> {
-    const appraisal = await this.dataSource.getRepository(AppraisalEntity).findOne({
+    const appraisal = await this.getRepository(AppraisalEntity).findOne({
       where: { assetId },
       order: { createdAt: 'DESC' }
     });
@@ -572,135 +627,135 @@ export class PostgresPawnRepository implements PawnRepository, OnApplicationShut
   }
 
   async saveLoan(loan: Loan): Promise<Loan> {
-    await this.dataSource.getRepository(LoanEntity).save(loan);
+    await this.getRepository(LoanEntity).save(loan);
     return loan;
   }
 
   async findLoan(id: string): Promise<Loan | undefined> {
-    const loan = await this.dataSource.getRepository(LoanEntity).findOne({ where: { id } });
+    const loan = await this.getRepository(LoanEntity).findOne({ where: { id } });
     return loan || undefined;
   }
 
   async saveRepayment(repayment: Repayment): Promise<Repayment> {
-    await this.dataSource.getRepository(RepaymentEntity).save(repayment);
+    await this.getRepository(RepaymentEntity).save(repayment);
     return repayment;
   }
 
   async saveListing(listing: Listing): Promise<Listing> {
-    await this.dataSource.getRepository(ListingEntity).save(listing);
+    await this.getRepository(ListingEntity).save(listing);
     return listing;
   }
 
   async findListing(id: string): Promise<Listing | undefined> {
-    const listing = await this.dataSource.getRepository(ListingEntity).findOne({ where: { id } });
+    const listing = await this.getRepository(ListingEntity).findOne({ where: { id } });
     return listing || undefined;
   }
 
   async listListings(): Promise<Listing[]> {
-    return this.dataSource.getRepository(ListingEntity).find();
+    return this.getRepository(ListingEntity).find();
   }
 
   async saveLayaway(layaway: Layaway): Promise<Layaway> {
-    await this.dataSource.getRepository(LayawayEntity).save(layaway);
+    await this.getRepository(LayawayEntity).save(layaway);
     return layaway;
   }
 
   async findLayaway(id: string): Promise<Layaway | undefined> {
-    const layaway = await this.dataSource.getRepository(LayawayEntity).findOne({ where: { id } });
+    const layaway = await this.getRepository(LayawayEntity).findOne({ where: { id } });
     return layaway || undefined;
   }
 
   async listLayaways(): Promise<Layaway[]> {
-    return this.dataSource.getRepository(LayawayEntity).find();
+    return this.getRepository(LayawayEntity).find();
   }
 
   async saveDispute(dispute: Dispute): Promise<Dispute> {
-    await this.dataSource.getRepository(DisputeEntity).save(dispute);
+    await this.getRepository(DisputeEntity).save(dispute);
     return dispute;
   }
 
   async findDispute(id: string): Promise<Dispute | undefined> {
-    const dispute = await this.dataSource.getRepository(DisputeEntity).findOne({ where: { id } });
+    const dispute = await this.getRepository(DisputeEntity).findOne({ where: { id } });
     return dispute || undefined;
   }
 
   async saveAuditEvent(event: AuditEvent): Promise<AuditEvent> {
-    await this.dataSource.getRepository(AuditEventEntity).save(event);
+    await this.getRepository(AuditEventEntity).save(event);
     return event;
   }
 
   async saveBlockchainTransaction(tx: BlockchainTransaction): Promise<BlockchainTransaction> {
-    await this.dataSource.getRepository(BlockchainTransactionEntity).save(tx);
+    await this.getRepository(BlockchainTransactionEntity).save(tx);
     return tx;
   }
 
   async getDashboard(): Promise<PawnDashboard> {
-    const repaymentCount = await this.dataSource.getRepository(RepaymentEntity).count();
+    const repaymentCount = await this.getRepository(RepaymentEntity).count();
     const protocolFeesCollected = 8420 + repaymentCount * 50;
 
     return {
-      assets: await this.dataSource.getRepository(AssetEntity).find(),
-      loans: await this.dataSource.getRepository(LoanEntity).find(),
-      listings: await this.dataSource.getRepository(ListingEntity).find(),
-      disputes: await this.dataSource.getRepository(DisputeEntity).find(),
-      auditEvents: await this.dataSource.getRepository(AuditEventEntity).find(),
-      layaways: await this.dataSource.getRepository(LayawayEntity).find(),
+      assets: await this.getRepository(AssetEntity).find(),
+      loans: await this.getRepository(LoanEntity).find(),
+      listings: await this.getRepository(ListingEntity).find(),
+      disputes: await this.getRepository(DisputeEntity).find(),
+      auditEvents: await this.getRepository(AuditEventEntity).find(),
+      layaways: await this.getRepository(LayawayEntity).find(),
       protocolFeesCollected
     };
   }
 
   async findWalletByUserId(userId: string): Promise<Wallet | undefined> {
-    const wallet = await this.dataSource.getRepository(WalletEntity).findOne({
+    const wallet = await this.getRepository(WalletEntity).findOne({
       where: { userId }
     });
     return wallet || undefined;
   }
 
   async findWalletByAddress(address: string): Promise<Wallet | undefined> {
-    const wallet = await this.dataSource.getRepository(WalletEntity).findOne({
-      where: { address }
+    const wallet = await this.getRepository(WalletEntity).findOne({
+      where: { address: address.toLowerCase() }
     });
     return wallet || undefined;
   }
 
   async deleteWallet(id: string): Promise<void> {
-    await this.dataSource.getRepository(WalletEntity).delete(id);
+    await this.getRepository(WalletEntity).delete(id);
   }
 
   async saveFractionalAsset(asset: FractionalAsset): Promise<FractionalAsset> {
-    await this.dataSource.getRepository(FractionalAssetEntity).save(asset);
+    await this.getRepository(FractionalAssetEntity).save(asset);
     return asset;
   }
 
   async findFractionalAsset(assetId: string): Promise<FractionalAsset | undefined> {
-    const asset = await this.dataSource.getRepository(FractionalAssetEntity).findOne({
+    const asset = await this.getRepository(FractionalAssetEntity).findOne({
       where: { assetId }
     });
     return asset || undefined;
   }
 
   async listFractionalAssets(): Promise<FractionalAsset[]> {
-    return this.dataSource.getRepository(FractionalAssetEntity).find();
+    return this.getRepository(FractionalAssetEntity).find();
   }
 
   async saveFractionalPosition(position: FractionalPosition): Promise<FractionalPosition> {
-    await this.dataSource.getRepository(FractionalPositionEntity).save(position);
+    await this.getRepository(FractionalPositionEntity).save(position);
     return position;
   }
 
   async findFractionalPosition(id: string): Promise<FractionalPosition | undefined> {
-    const pos = await this.dataSource.getRepository(FractionalPositionEntity).findOne({ where: { id } });
+    const pos = await this.getRepository(FractionalPositionEntity).findOne({ where: { id } });
     return pos || undefined;
   }
 
   async findFractionalPositionByHolderAndAsset(holderId: string, assetId: string): Promise<FractionalPosition | undefined> {
-    const pos = await this.dataSource.getRepository(FractionalPositionEntity).findOne({
+    const pos = await this.getRepository(FractionalPositionEntity).findOne({
       where: { holderId, assetId }
     });
     return pos || undefined;
   }
 
   async listFractionalPositions(): Promise<FractionalPosition[]> {
-    return this.dataSource.getRepository(FractionalPositionEntity).find();
+    return this.getRepository(FractionalPositionEntity).find();
   }
 }

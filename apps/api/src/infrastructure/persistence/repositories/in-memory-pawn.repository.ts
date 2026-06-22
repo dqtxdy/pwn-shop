@@ -72,10 +72,19 @@ export class InMemoryPawnRepository implements PawnRepository {
       kycStatus: KycStatus.Verified,
       createdAt: new Date(now.getTime() - 30 * 24 * 3600000)
     };
+    // System service-account: always present so FK columns referencing 'system' are valid.
+    const systemUser: User = {
+      id: 'system',
+      displayName: 'System Account',
+      role: UserRole.Admin,
+      kycStatus: KycStatus.Verified,
+      createdAt: new Date(now.getTime() - 365 * 24 * 3600000)
+    };
     this.users.set(customerUser.id, customerUser);
     this.users.set(customer2User.id, customer2User);
     this.users.set(staffUser.id, staffUser);
     this.users.set(adminUser.id, adminUser);
+    this.users.set(systemUser.id, systemUser);
 
     // Seed wallets
     const customerWallet: Wallet = {
@@ -641,4 +650,9 @@ export class InMemoryPawnRepository implements PawnRepository {
   async listFractionalPositions(): Promise<FractionalPosition[]> {
     return [...this.fractionalPositions.values()];
   }
+
+  async runInTransaction<T>(fn: (repo: PawnRepository) => Promise<T>): Promise<T> {
+    return fn(this);
+  }
 }
+

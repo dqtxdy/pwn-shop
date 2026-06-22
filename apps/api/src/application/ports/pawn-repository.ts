@@ -61,4 +61,6 @@ export interface PawnRepository {
   findFractionalPosition(id: string): Promise<FractionalPosition | undefined>;
   findFractionalPositionByHolderAndAsset(holderId: string, assetId: string): Promise<FractionalPosition | undefined>;
   listFractionalPositions(): Promise<FractionalPosition[]>;
+  runInTransaction?<T>(fn: (repo: PawnRepository) => Promise<T>): Promise<T>;
 }
+
