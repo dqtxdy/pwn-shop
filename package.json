@@ -18,6 +18,6 @@
     "check:readiness": "node scripts/readiness-check.mjs",
     "db:up": "node scripts/db-up.mjs",
     "db:down": "docker compose down",
-    "test:postgres": "POSTGRES_TESTS=1 npm --workspace apps/api test -- pawn-repository.spec.ts"
+    "test:postgres": "POSTGRES_TESTS=1 DB_SYNCHRONIZE=false DB_MIGRATIONS_RUN=true npm --workspace apps/api test -- pawn-repository.spec.ts"
   }
 }

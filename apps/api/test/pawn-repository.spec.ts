@@ -181,10 +181,40 @@ describe('PawnRepository Contract Tests', () => {
     testFn('should preserve layaway wei fields as strings', async () => {
       if (!repo) return;
 
+      const seller: User = {
+        id: 'seller-wei',
+        displayName: 'Wei Seller',
+        role: UserRole.Customer,
+        kycStatus: KycStatus.Verified,
+        createdAt: new Date()
+      };
+      await repo.saveUser(seller);
+
+      const buyer: User = {
+        id: 'buyer-wei',
+        displayName: 'Wei Buyer',
+        role: UserRole.Customer,
+        kycStatus: KycStatus.Verified,
+        createdAt: new Date()
+      };
+      await repo.saveUser(buyer);
+
+      const asset: Asset = {
+        id: 'asset-wei',
+        ownerId: seller.id,
+        title: 'Wei Test Asset',
+        category: 'jewelry',
+        description: 'Asset used to verify layaway wei persistence',
+        status: AssetStatus.Listed,
+        declaredValue: 1000,
+        createdAt: new Date()
+      };
+      await repo.saveAsset(asset);
+
       const listing: Listing = {
         id: 'listing-wei',
-        assetId: 'A-1004',
-        sellerId: 'customer-1',
+        assetId: asset.id,
+        sellerId: seller.id,
         price: 1000,
         status: ListingStatus.Active,
         isProtocolOwned: false,
@@ -195,7 +225,7 @@ describe('PawnRepository Contract Tests', () => {
       const layaway: Layaway = {
         id: 'layaway-wei',
         listingId: listing.id,
-        buyerId: 'customer-2',
+        buyerId: buyer.id,
         totalPrice: 1000,
         amountPaid: 200,
         deadline: new Date(),
