@@ -2,9 +2,8 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication, ForbiddenException } from '@nestjs/common';
 import * as request from 'supertest';
 import { ValidationPipe } from '@nestjs/common';
-import { AppModule } from '../src/app.module';
-import { AuthService } from '../src/application/services/auth.service';
-import { UserRole } from '../src/domain/enums';
+import { PAWN_REPOSITORY } from '../src/common/tokens';
+import { AssetStatus, UserRole } from '../src/domain/enums';
 
 describe('Auth Guards & Role Restrictions (Integration)', () => {
   let app: INestApplication;

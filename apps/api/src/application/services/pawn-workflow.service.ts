@@ -106,11 +106,6 @@ export class PawnWorkflowService {
 
     if (result.status === KycStatus.Verified) {
       const normalizedWallet = walletAddress.toLowerCase();
-      const existingWalletWithAddress = await this.repository.findWalletByAddress(normalizedWallet);
-      if (existingWalletWithAddress && existingWalletWithAddress.userId !== userId) {
-        throw new BadRequestException(`Wallet address ${normalizedWallet} is already linked to another user`);
-      }
-
       let wallet = await this.repository.findWalletByUserId(userId);
       if (wallet) {
         wallet.address = normalizedWallet;
@@ -1064,8 +1059,8 @@ export class PawnWorkflowService {
       ? actorObj.wallet
       : (await this.repository.findWalletByUserId(actorId))?.address;
 
-    const user = ownerWalletAddress ? await this.repository.findUserByWallet(ownerWalletAddress) : undefined;
-    const isAdmin = actorId === 'admin-1' || (actorObj && actorObj.role === UserRole.Admin) || (user && user.role === 'ADMIN');
+    const user = await this.repository.findUserById(actorId);
+    const isAdmin = actorId === 'admin-1' || (actorObj && actorObj.role === UserRole.Admin) || (user && user.role === UserRole.Admin);
 
     if (!isAdmin && asset.ownerId !== actorId) {
       throw new ForbiddenException('Only asset owner or admin can fractionalize');
@@ -1173,8 +1168,8 @@ export class PawnWorkflowService {
       throw new BadRequestException(`No wallet found for buyer ${buyerId}`);
     }
 
-    const buyerUser = await this.repository.findUserByWallet(buyerWalletAddress);
-    if (!buyerUser || buyerUser.kycStatus !== 'VERIFIED') {
+    const buyerUser = await this.repository.findUserById(buyerId);
+    if (!buyerUser || buyerUser.kycStatus !== KycStatus.Verified) {
       throw new ForbiddenException('KYC verification required to buy fractions');
     }
 

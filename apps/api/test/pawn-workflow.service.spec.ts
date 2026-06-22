@@ -871,11 +871,13 @@ describe('PawnWorkflowService', () => {
       expect((buyRes as any).availableShares).toBe(90);
     });
 
-    it('rejects requestKyc if the wallet address is already linked to another user', async () => {
+    it('allows requestKyc even if the wallet address is already linked to another user', async () => {
       const seededWallet = '0x1111111111111111111111111111111111111111';
-      await expect(
-        service.requestKyc('customer-2', seededWallet)
-      ).rejects.toThrow('is already linked to another user');
+      const kycRes = await service.requestKyc('customer-2', seededWallet);
+      expect(kycRes).toBeDefined();
+
+      const wallet = await repository.findWalletByUserId('customer-2');
+      expect(wallet?.address).toBe(seededWallet);
     });
 
     it('uses the new wallet address provided in session instead of seed wallet address', async () => {

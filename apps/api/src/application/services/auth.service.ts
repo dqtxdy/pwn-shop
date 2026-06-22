@@ -108,11 +108,6 @@ export class AuthService {
     const normalizedWallet = walletAddress ? walletAddress.toLowerCase() : undefined;
 
     if (normalizedWallet) {
-      const existingWalletWithAddress = await this.repository.findWalletByAddress(normalizedWallet);
-      if (existingWalletWithAddress && existingWalletWithAddress.userId !== user.id) {
-        throw new BadRequestException(`Wallet address ${normalizedWallet} is already linked to another user`);
-      }
-
       let wallet = await this.repository.findWalletByUserId(user.id);
       if (wallet) {
         wallet.address = normalizedWallet;
@@ -130,17 +125,25 @@ export class AuthService {
       }
     }
 
+    let finalWalletAddress = normalizedWallet;
+    if (!finalWalletAddress) {
+      const existingWallet = await this.repository.findWalletByUserId(user.id);
+      if (existingWallet) {
+        finalWalletAddress = existingWallet.address;
+      }
+    }
+
     const token = await this.jwtService.signAsync({
       sub: user.id,
       role: user.role,
-      ...(normalizedWallet ? { wallet: normalizedWallet } : {})
+      ...(finalWalletAddress ? { wallet: finalWalletAddress } : {})
     });
 
     return {
       userId: user.id,
       displayName: user.displayName,
       role: user.role,
-      walletAddress: normalizedWallet,
+      walletAddress: finalWalletAddress,
       token
     };
   }

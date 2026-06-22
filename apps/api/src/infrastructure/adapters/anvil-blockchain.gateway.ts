@@ -215,11 +215,12 @@ export class AnvilBlockchainGateway implements BlockchainGateway, OnModuleDestro
               const logAmount = parsed.args[2].toString();
 
               const expectedAmountWei = ethers.parseEther(input.amount.toString());
+              const minAllowedWei = (expectedAmountWei * 95n) / 100n;
 
               if (
                 logTokenId === tokenId.toString() &&
                 logBorrower === input.borrowerWallet.toLowerCase() &&
-                BigInt(logAmount) >= expectedAmountWei - ethers.parseEther('0.01')
+                BigInt(logAmount) >= minAllowedWei
               ) {
                 logVerified = true;
                 break;

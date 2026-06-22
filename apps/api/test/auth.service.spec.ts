@@ -72,13 +72,18 @@ describe('AuthService', () => {
       expect(session.walletAddress).toBeUndefined();
     });
 
-    it('rejects demoLogin if the wallet address is already linked to another user', async () => {
+    it('allows multiple users to share a wallet address on demoLogin', async () => {
       const sharedWallet = '0x1234567890abcdef1234567890abcdef12345678';
-      await service.demoLogin(UserRole.Customer, 'customer-1', undefined, sharedWallet);
+      const session1 = await service.demoLogin(UserRole.Customer, 'customer-1', undefined, sharedWallet);
+      const session2 = await service.demoLogin(UserRole.Customer, 'customer-2', undefined, sharedWallet);
 
-      await expect(
-        service.demoLogin(UserRole.Customer, 'customer-2', undefined, sharedWallet)
-      ).rejects.toThrow('is already linked to another user');
+      expect(session1.walletAddress).toBe(sharedWallet);
+      expect(session2.walletAddress).toBe(sharedWallet);
+
+      const wallet1 = await repository.findWalletByUserId('customer-1');
+      const wallet2 = await repository.findWalletByUserId('customer-2');
+      expect(wallet1?.address).toBe(sharedWallet);
+      expect(wallet2?.address).toBe(sharedWallet);
     });
 
     it('persists/upserts the wallet address in the repository on demoLogin', async () => {
