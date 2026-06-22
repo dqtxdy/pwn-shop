@@ -2947,7 +2947,7 @@ export default function App({ walletButton }: AppProps) {
         visible={isListModalVisible}
         closeAriaLabel="Close modal"
         header="List Asset for Sale"
-        className="demo-list-modal"
+        size="medium"
       >
         <form onSubmit={onSubmitListing}>
           <SpaceBetween size="m">

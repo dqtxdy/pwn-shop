@@ -23,16 +23,15 @@ body {
 .app-shell {
   display: flex;
   flex-direction: column;
-  height: 100vh;
+  min-height: 100vh;
   background: #dfe7e5;
-  overflow: hidden;
 }
 
 .workspace-shell {
   flex: 1;
   background: var(--surface-muted);
   position: relative;
-  overflow: hidden;
+  min-height: calc(100vh - 56px);
 }
 
 .content-shell {
@@ -456,10 +455,6 @@ body {
   line-height: 1.5;
 }
 
-.demo-list-modal {
-  max-width: 560px;
-}
-
 @media (max-width: 992px) {
   .console-topbar {
     align-items: flex-start;
@@ -699,4 +694,3 @@ body {
     grid-template-columns: 1fr;
   }
 }
-
