@@ -126,7 +126,7 @@ export class AuthService {
     }
 
     let finalWalletAddress = normalizedWallet;
-    if (!finalWalletAddress) {
+    if (!finalWalletAddress && process.env.BLOCKCHAIN_MODE === 'anvil') {
       const existingWallet = await this.repository.findWalletByUserId(user.id);
       if (existingWallet) {
         finalWalletAddress = existingWallet.address;
