@@ -19,14 +19,13 @@ import Textarea from '@cloudscape-design/components/textarea';
 import Button from '@cloudscape-design/components/button';
 import Alert from '@cloudscape-design/components/alert';
 import Badge from '@cloudscape-design/components/badge';
-import Select from '@cloudscape-design/components/select';
 import StatusIndicator from '@cloudscape-design/components/status-indicator';
 import Box from '@cloudscape-design/components/box';
 import Modal from '@cloudscape-design/components/modal';
 import Flashbar from '@cloudscape-design/components/flashbar';
 import FileUpload from '@cloudscape-design/components/file-upload';
 
-import { api } from './api';
+import { api, clearAuthToken } from './api';
 import type {
   Asset,
   Listing,
@@ -46,9 +45,7 @@ import {
   formatId,
   getStatusIndicator,
   pageLabelMap,
-  roleLabels,
-  roleSelectOptions,
-  workspaceHomeHref
+  roleLabels
 } from './workspaceConfig';
 import {
   createAppraisalEvidenceUri,
@@ -87,6 +84,13 @@ export default function App({ walletButton }: AppProps) {
   const [blockchainConfig, setBlockchainConfig] = useState<BlockchainConfig | null>(null);
   const [blockchainHealth, setBlockchainHealth] = useState<BlockchainHealth | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loginLoading, setLoginLoading] = useState(false);
+  const [loginError, setLoginError] = useState('');
+  const [accountId, setAccountId] = useState('pawnshop-demo');
+  const [rememberAccount, setRememberAccount] = useState(true);
+  const [loginUsername, setLoginUsername] = useState('customer-1');
+  const [loginPassword, setLoginPassword] = useState('demo-password');
+  const [showPassword, setShowPassword] = useState(false);
 
   // Layout navigation states
   const [navigationOpen, setNavigationOpen] = useState(true);
@@ -545,18 +549,7 @@ export default function App({ walletButton }: AppProps) {
   };
 
   useEffect(() => {
-    const initSessionAndLoad = async () => {
-      let defaultSession = null;
-      try {
-        defaultSession = await api.demoLogin('CUSTOMER');
-        setSession(defaultSession);
-        setActiveHref('#overview');
-      } catch (err) {
-        console.error('Failed to initialize demo session', err);
-      }
-      loadData(defaultSession);
-    };
-    initSessionAndLoad();
+    setLoading(false);
   }, []);
 
   useEffect(() => {
@@ -566,42 +559,46 @@ export default function App({ walletButton }: AppProps) {
     }
   }, [activeHref, selectedAsset, dashboard, session]);
 
-  const handleRoleChange = async (selectedValue: string) => {
-    setNotifications([]); // Clear notifications on role switch!
-    try {
-      let role: 'CUSTOMER' | 'STAFF' | 'ADMIN';
-      let userId: string | undefined;
+  const handleLogin = async (options?: { allowEmptyCredentials?: boolean }) => {
+    const allowEmptyCredentials = options?.allowEmptyCredentials ?? false;
+    setLoginError('');
 
-      if (selectedValue === 'customer-1') {
-        role = 'CUSTOMER';
-        userId = 'customer-1';
-      } else if (selectedValue === 'customer-2') {
-        role = 'CUSTOMER';
-        userId = 'customer-2';
-      } else if (selectedValue === 'STAFF') {
-        role = 'STAFF';
-      } else if (selectedValue === 'ADMIN') {
-        role = 'ADMIN';
-      } else {
-        throw new Error(`Invalid role option selected: ${selectedValue}`);
-      }
-
-      const newSession = await api.demoLogin(role, userId);
-      setSession(newSession);
-      await loadData(newSession);
-
-      // Set default sidebar selection for the selected role
-      if (role === 'CUSTOMER') {
-        setActiveHref('#overview');
-      } else if (role === 'STAFF') {
-        setActiveHref('#work-queue');
-      } else if (role === 'ADMIN') {
-        setActiveHref('#admin-overview');
-      }
-      setSelectedAsset(null);
-    } catch (err: any) {
-      addNotification('error', err.message || 'Failed to switch demo session');
+    if (!allowEmptyCredentials && (!loginUsername.trim() || !loginPassword.trim())) {
+      setLoginError('Enter a username and password to continue.');
+      return;
     }
+
+    setLoginLoading(true);
+    try {
+      const newSession = await api.demoLogin('CUSTOMER', 'customer-1');
+      setSession(newSession);
+      setNotifications([]);
+      setSelectedAsset(null);
+      setActiveHref('#overview');
+      await loadData(newSession);
+    } catch (err: any) {
+      setLoginError(err.message || 'Failed to sign in with the demo account.');
+    } finally {
+      setLoginLoading(false);
+    }
+  };
+
+  const handleSignOut = () => {
+    clearAuthToken();
+    setSession(null);
+    setDashboard(null);
+    setMarketplace([]);
+    setFractionalAssets([]);
+    setFractionalPositions([]);
+    setNotifications([]);
+    setSelectedAsset(null);
+    setSelectedStaffAsset(null);
+    setActiveHref('#overview');
+    setLoading(false);
+    setLoginError('');
+    setLoginUsername('customer-1');
+    setLoginPassword('demo-password');
+    setShowPassword(false);
   };
 
   // Convert File helper
@@ -2833,80 +2830,164 @@ export default function App({ walletButton }: AppProps) {
     { text: 'Workspace', href: '#' }
   ];
 
+  if (!session) {
+    return (
+      <div className="login-shell">
+        <div className="login-brand">
+          <div className="login-brand__mark">P</div>
+          <div className="login-brand__text">PawnShop Protocol</div>
+        </div>
+
+        <div className="login-layout">
+          <div className="login-card">
+            <div className="login-card__header">
+              <div className="login-card__eyebrow">Customer access</div>
+              <h1>PawnShop Protocol sign in</h1>
+              <p>Use the demo customer workspace to manage custody, marketplace, and wallet actions.</p>
+            </div>
+
+            {loginError ? (
+              <div className="login-alert" role="alert">
+                {loginError}
+              </div>
+            ) : null}
+
+            <form
+              className="login-form"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void handleLogin();
+              }}
+            >
+              <label className="login-field">
+                <span>Account ID or alias</span>
+                <input
+                  value={accountId}
+                  onChange={(event) => setAccountId(event.target.value)}
+                  placeholder="pawnshop-demo"
+                />
+              </label>
+
+              <label className="login-checkbox">
+                <input
+                  type="checkbox"
+                  checked={rememberAccount}
+                  onChange={(event) => setRememberAccount(event.target.checked)}
+                />
+                <span>Remember this account</span>
+              </label>
+
+              <label className="login-field">
+                <span>Username</span>
+                <input
+                  value={loginUsername}
+                  onChange={(event) => setLoginUsername(event.target.value)}
+                  placeholder="customer-1"
+                />
+              </label>
+
+              <label className="login-field">
+                <span>Password</span>
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  value={loginPassword}
+                  onChange={(event) => setLoginPassword(event.target.value)}
+                  placeholder="Enter your password"
+                />
+              </label>
+
+              <label className="login-checkbox">
+                <input
+                  type="checkbox"
+                  checked={showPassword}
+                  onChange={(event) => setShowPassword(event.target.checked)}
+                />
+                <span>Show password</span>
+              </label>
+
+              <div className="login-actions">
+                <button className="login-button login-button--primary" type="submit" disabled={loginLoading}>
+                  {loginLoading ? 'Signing in...' : 'Sign in'}
+                </button>
+                <button
+                  className="login-button login-button--secondary"
+                  type="button"
+                  disabled={loginLoading}
+                  onClick={() => void handleLogin({ allowEmptyCredentials: true })}
+                >
+                  Sign in using demo customer
+                </button>
+              </div>
+
+              <button
+                className="login-inline-link"
+                type="button"
+                onClick={() => {
+                  setAccountId('pawnshop-demo');
+                  setLoginUsername('customer-1');
+                  setLoginPassword('demo-password');
+                  setLoginError('');
+                }}
+              >
+                Create a demo account
+              </button>
+            </form>
+          </div>
+
+          <aside className="login-promo">
+            <div className="login-promo__badge">Pawn-backed liquidity</div>
+            <h2>Physical asset finance, backed by blockchain</h2>
+            <p>Pawn, list, buy, and fractionalize authenticated assets in one workspace.</p>
+            <div className="login-promo__panel">
+              <div>
+                <strong>Custody</strong>
+                <span>Tracked intake, appraisal, and release milestones.</span>
+              </div>
+              <div>
+                <strong>Marketplace</strong>
+                <span>Consignment, layaway, and fraction sales in one ledger.</span>
+              </div>
+              <div>
+                <strong>Wallet-ready</strong>
+                <span>Keep Web3 actions close to the operating workflow after sign in.</span>
+              </div>
+            </div>
+          </aside>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="app-shell">
-      <header className="console-topbar">
-        <div className="console-topbar__brand">
-          <span className="console-topbar__title">PawnShop Protocol</span>
-          <span className="console-topbar__env">
-            {blockchainConfig?.mode === 'anvil' ? 'Anvil Network' : 'Mock Mode'}
-          </span>
-          <span style={{ marginLeft: '12px', display: 'flex', alignItems: 'center' }} title={blockchainHealth?.reason}>
-            {blockchainConfig?.mode === 'anvil' ? (
-              blockchainHealth?.healthy ? (
-                <StatusIndicator type="success">Local Anvil connected</StatusIndicator>
-              ) : (
-                <StatusIndicator type="error">
-                  Local Anvil connection error
-                </StatusIndicator>
-              )
-            ) : (
-              <StatusIndicator type="info">Mock mode</StatusIndicator>
-            )}
-          </span>
-        </div>
-
-
-
-        <div className="console-topbar__actions">
-          <div className="session-indicator">
-            <span className="user-display-name">
-              {session ? session.displayName : 'Loading demo session'}
-            </span>
-          </div>
-
-          <div className="demo-session-selector">
-            <Select
-              className="demo-session-select"
-              selectedOption={roleSelectOptions.find((option) => option.value === (session ? (session.role === 'CUSTOMER' ? session.userId : session.role) : 'customer-1')) ?? null}
-              onChange={({ detail }) => handleRoleChange(detail.selectedOption.value ?? '')}
-              options={roleSelectOptions}
-              ariaLabel="Select demo session"
-              data-testid="role-select"
-            />
-          </div>
-
-          <Button
-            variant="icon"
-            className="utility-button"
-            iconName="refresh"
-            ariaLabel="Refresh dashboard"
-            onClick={() => loadData()}
-            loading={loading}
-          />
-
-          <div className="wallet-connect-wrapper">
-            {walletButton}
-          </div>
-        </div>
-      </header>
-
       <div className="workspace-shell">
         <AppLayout
           navigationOpen={navigationOpen}
           onNavigationChange={({ detail }) => setNavigationOpen(detail.open)}
           navigation={
-            <SideNavigation
-              className="console-sidebar"
-              activeHref={activeHref}
-              header={sideNavHeader}
-              onFollow={(e) => {
-                e.preventDefault();
-                setActiveHref(e.detail.href);
-                setNotifications([]); // Clear notifications on page navigation!
-              }}
-              items={sideNavItems()}
-            />
+            <div className="sidebar-shell">
+              <SideNavigation
+                className="console-sidebar"
+                activeHref={activeHref}
+                header={sideNavHeader}
+                onFollow={(e) => {
+                  e.preventDefault();
+                  setActiveHref(e.detail.href);
+                  setNotifications([]);
+                }}
+                items={sideNavItems()}
+              />
+              <div className="sidebar-footer">
+                <div className="sidebar-session-card">
+                  <span className="sidebar-session-card__label">Signed in as</span>
+                  <strong>{session.displayName}</strong>
+                  <span>{session.userId}</span>
+                </div>
+                <Button variant="normal" fullWidth onClick={handleSignOut}>
+                  Sign out
+                </Button>
+              </div>
+            </div>
           }
           toolsHide={true}
           content={
@@ -2925,7 +3006,14 @@ export default function App({ walletButton }: AppProps) {
                   />
                   <Header
                     variant="h1"
-                    description={`${pageLabelMap[activeHref] || 'Overview'} | ${session?.displayName ?? 'Demo Customer'}`}
+                    description={`${pageLabelMap[activeHref] || 'Overview'} | ${session.displayName}`}
+                    actions={
+                      <div className="content-header-actions">
+                        <div className="wallet-connect-wrapper">
+                          {walletButton}
+                        </div>
+                      </div>
+                    }
                   >
                     Physical Asset Pawnshop Operations
                   </Header>

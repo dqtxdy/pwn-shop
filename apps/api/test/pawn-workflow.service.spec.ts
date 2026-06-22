@@ -170,7 +170,7 @@ describe('PawnWorkflowService', () => {
       ).rejects.toThrow('Seller must own the asset');
     });
 
-    it('rejects protocol-owned listing creation from customer sellerId', async () => {
+    it('rejects protocol-owned listing creation from customer account sellerId', async () => {
       const asset = await repository.findAsset('A-1004');
       expect(asset).toBeDefined();
       asset!.status = AssetStatus.Listed;

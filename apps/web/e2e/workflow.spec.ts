@@ -38,11 +38,11 @@ test.describe('PawnShop Protocol E2E Flow', () => {
     await request.post('http://localhost:3000/api/demo/reset');
     
     await page.goto('/');
-    // Assert app loads with Demo Customer
+    // Assert app loads with the default demo customer account
     await expect(page.locator('.user-display-name')).toContainText('Demo Customer');
   });
 
-  test('should load dashboard data and login as Demo Customer by default', async ({ page }) => {
+  test('should load dashboard data and login as the default demo customer', async ({ page }) => {
     // Navigate to My Assets & Loans
     await page.locator('a[href="#my-assets"]').click();
 

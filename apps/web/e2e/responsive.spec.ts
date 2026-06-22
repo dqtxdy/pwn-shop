@@ -41,7 +41,7 @@ test.describe('PawnShop Protocol – Responsive Layout', () => {
     });
 
     await page.goto('/');
-    // Assert app loads with Demo Customer at every viewport
+    // Assert app loads with the default demo customer at every viewport
     await expect(page.locator('.user-display-name')).toContainText('Demo Customer');
   });
 
@@ -84,7 +84,7 @@ test.describe('PawnShop Protocol – Responsive Layout', () => {
     // Navigate to New Pawn Request view
     await page.locator('a[href="#new-pawn"]').click();
 
-    // Submit Request button should always be visible and enabled for Demo Customer
+    // Submit Request button should always be visible and enabled for the default demo customer
     const submitBtn = page.locator('button:has-text("Submit Request")');
     await expect(submitBtn).toBeVisible();
     await expect(submitBtn).toBeEnabled();
@@ -139,4 +139,3 @@ test.describe('PawnShop Protocol – Responsive Layout', () => {
     }
   });
 });
-

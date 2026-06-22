@@ -126,17 +126,19 @@ export class PostgresPawnRepository implements PawnRepository, OnApplicationShut
     const now = new Date();
 
     // 1. Seed Users
+    // Both demo customer accounts use the same CUSTOMER role. The labels are
+    // for presentation and cross-customer demo flows only.
     const users: User[] = [
       {
         id: 'customer-1',
-        displayName: 'Demo Customer Seller',
+        displayName: 'Demo Customer 1',
         role: UserRole.Customer,
         kycStatus: KycStatus.Verified,
         createdAt: new Date(now.getTime() - 30 * 24 * 3600000)
       },
       {
         id: 'customer-2',
-        displayName: 'Demo Customer Buyer',
+        displayName: 'Demo Customer 2',
         role: UserRole.Customer,
         kycStatus: KycStatus.Verified,
         createdAt: new Date(now.getTime() - 30 * 24 * 3600000)

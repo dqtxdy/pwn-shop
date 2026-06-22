@@ -8,8 +8,8 @@ export const roleLabels: Record<DemoSession['role'], string> = {
 };
 
 export const roleSelectOptions = [
-  { label: 'Demo Customer Seller', value: 'customer-1' },
-  { label: 'Demo Customer Buyer', value: 'customer-2' },
+  { label: 'Demo Customer 1', value: 'customer-1' },
+  { label: 'Demo Customer 2', value: 'customer-2' },
   { label: 'Demo Staff / Validator', value: 'STAFF' },
   { label: 'Demo Admin', value: 'ADMIN' }
 ];

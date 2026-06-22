@@ -82,6 +82,11 @@ The two switches are independent:
 - `BLOCKCHAIN_MODE=mock` or `BLOCKCHAIN_MODE=anvil`
 - `STORAGE_MODE=mock` or `STORAGE_MODE=filesystem`
 
+The demo workspace includes two customer accounts, `customer-1` and `customer-2`,
+both assigned the same `CUSTOMER` role. They are labeled as Demo Customer 1 and
+Demo Customer 2 in the UI so cross-customer marketplace and layaway flows can be
+tested without implying separate customer types.
+
 ## Run The Default Mock Demo
 
 This is the easiest mode for presentation rehearsal.

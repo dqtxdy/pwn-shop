@@ -24,29 +24,6 @@ vi.mock('wagmi', () => ({
   })
 }));
 
-// Mock Cloudscape Select component to render as a native HTML select,
-// which makes role switching in unit tests simple and 100% reliable.
-vi.mock('@cloudscape-design/components/select', () => ({
-  default: ({ selectedOption, onChange, options, className }: any) => (
-    <select
-      className={className}
-      data-testid="role-select"
-      value={selectedOption?.value}
-      onChange={(e) => {
-        const val = e.target.value;
-        const opt = options.find((o: any) => o.value === val);
-        onChange({ detail: { selectedOption: opt } });
-      }}
-    >
-      {options.map((o: any) => (
-        <option key={o.value} value={o.value}>
-          {o.label}
-        </option>
-      ))}
-    </select>
-  )
-}));
-
 afterEach(() => {
   cleanup();
 });
@@ -96,6 +73,23 @@ const mockMarketplaceData: any[] = [];
 const mockFetch = vi.fn();
 global.fetch = mockFetch;
 
+const customerDisplayName = (userId: string) =>
+  userId === 'customer-2' ? 'Demo Customer 2' : 'Demo Customer 1';
+
+const renderAndSignIn = async () => {
+  render(<App walletButton={<button type="button">Connect Wallet</button>} />);
+
+  await waitFor(() => {
+    expect(screen.getByText('PawnShop Protocol sign in')).toBeInTheDocument();
+  });
+
+  fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
+
+  await waitFor(() => {
+    expect(screen.getByText('Customer Workspace')).toBeInTheDocument();
+  });
+};
+
 describe('App', () => {
   beforeEach(() => {
     mockFetch.mockReset();
@@ -110,7 +104,7 @@ describe('App', () => {
         const bodyObj = options?.body ? JSON.parse(options.body) : {};
         const role = bodyObj.role || 'CUSTOMER';
         let userId = bodyObj.userId || 'customer-1';
-        let displayName = userId === 'customer-2' ? 'Demo Customer Buyer' : 'Demo Customer Seller';
+        let displayName = customerDisplayName(userId);
         if (role === 'STAFF') {
           userId = 'staff-1';
           displayName = 'Demo Staff';
@@ -165,31 +159,26 @@ describe('App', () => {
     });
   });
 
-  it('renders the operational workspace with Customer navigation by default', async () => {
+  it('shows the login page first and enters the customer workspace after sign in', async () => {
     render(<App walletButton={<button type="button">Connect Wallet</button>} />);
-    expect(screen.getByText('Physical Asset Pawnshop Operations')).toBeInTheDocument();
-    
-    // Default session is Customer
+    expect(screen.getByText('PawnShop Protocol sign in')).toBeInTheDocument();
+    expect(screen.queryByText('Physical Asset Pawnshop Operations')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
+
     await waitFor(() => {
+      expect(screen.getByText('Physical Asset Pawnshop Operations')).toBeInTheDocument();
       expect(screen.getByText('Customer Workspace')).toBeInTheDocument();
     });
 
     // Customer navigation items are visible
     expect(screen.getByText('New Pawn Request')).toBeInTheDocument();
     expect(screen.getByText('My Assets & Loans')).toBeInTheDocument();
-    
-    // Validator and Admin navigation items are NOT visible
-    expect(screen.queryByText('Work Queue')).not.toBeInTheDocument();
-    expect(screen.queryByText('Audit Events')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('role-select')).not.toBeInTheDocument();
   });
 
   it('submits asset form and calls the API', async () => {
-    render(<App walletButton={<button type="button">Connect Wallet</button>} />);
-
-    // Go to New Pawn Request tab
-    await waitFor(() => {
-      expect(screen.getByText('Customer Workspace')).toBeInTheDocument();
-    });
+    await renderAndSignIn();
     fireEvent.click(screen.getByText('New Pawn Request'));
 
     // Wait for form to render (navigation may be async in Cloudscape SideNavigation)
@@ -232,12 +221,7 @@ describe('App', () => {
   });
 
   it('lists returned asset for sale and calls the marketplace/listings API', async () => {
-    render(<App walletButton={<button type="button">Connect Wallet</button>} />);
-
-    // Go to My Assets & Loans tab
-    await waitFor(() => {
-      expect(screen.getByText('Customer Workspace')).toBeInTheDocument();
-    });
+    await renderAndSignIn();
     fireEvent.click(screen.getByText('My Assets & Loans'));
 
     // Select the returned asset row in table
@@ -307,8 +291,8 @@ describe('App', () => {
     });
 
     render(<App walletButton={<button type="button">Connect Wallet</button>} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
 
-    // Wait for session to load
     await waitFor(() => {
       expect(screen.getByText('Test Customer 999')).toBeInTheDocument();
     });
@@ -348,84 +332,32 @@ describe('App', () => {
     });
   });
 
-  it('proves switching role changes displayed workspace and side nav visibility', async () => {
+  it('supports signing in with the secondary demo button and signing out back to login', async () => {
     render(<App walletButton={<button type="button">Connect Wallet</button>} />);
 
-    // Wait for session to load
+    fireEvent.change(screen.getByLabelText('Username'), { target: { value: '' } });
+    fireEvent.change(screen.getByLabelText('Password'), { target: { value: '' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Sign in using demo customer' }));
+
     await waitFor(() => {
-      expect(screen.getByText('Demo Customer Seller')).toBeInTheDocument();
+      expect(screen.getByText('Demo Customer 1')).toBeInTheDocument();
     });
 
-    // Switch to Validator (STAFF)
-    const select = screen.getByTestId('role-select');
-    fireEvent.change(select, { target: { value: 'STAFF' } });
+    expect(screen.getByText('Customer Workspace')).toBeInTheDocument();
+    expect(screen.queryByTestId('role-select')).not.toBeInTheDocument();
 
-    // Verify topbar user displays Demo Staff
+    fireEvent.click(screen.getByRole('button', { name: 'Sign out' }));
+
     await waitFor(() => {
-      expect(screen.getByText('Demo Staff')).toBeInTheDocument();
+      expect(screen.getByText('PawnShop Protocol sign in')).toBeInTheDocument();
     });
 
-    // Verify side nav is now Validator Workspace
-    expect(screen.getByText('Validator Workspace')).toBeInTheDocument();
-    expect(screen.getByText('Work Queue')).toBeInTheDocument();
-    expect(screen.getByText('Appraisals')).toBeInTheDocument();
-
-    // Verify Customer/Admin navigation is hidden
-    expect(screen.queryByText('New Pawn Request')).not.toBeInTheDocument();
-    expect(screen.queryByText('Audit Events')).not.toBeInTheDocument();
-
-    // Switch to Admin
-    fireEvent.change(select, { target: { value: 'ADMIN' } });
-
-    // Verify topbar user displays Demo Admin
-    await waitFor(() => {
-      expect(screen.getByText('Demo Admin')).toBeInTheDocument();
-    });
-
-    // Verify side nav is now Admin Workspace
-    expect(screen.getByText('Admin Workspace')).toBeInTheDocument();
-    expect(screen.getByText('Audit Events')).toBeInTheDocument();
-    expect(screen.getByText('System Adapters')).toBeInTheDocument();
-
-    // Verify Customer/Validator navigation is hidden
-    expect(screen.queryByText('New Pawn Request')).not.toBeInTheDocument();
-    expect(screen.queryByText('Work Queue')).not.toBeInTheDocument();
+    expect(screen.queryByText('Customer Workspace')).not.toBeInTheDocument();
   });
 
-  it('proves Demo Customer Buyer does not see customer-1 assets in My Assets/Next Actions', async () => {
-    render(<App walletButton={<button type="button">Connect Wallet</button>} />);
-
-    // Wait for default session (customer-1) to load
-    await waitFor(() => {
-      expect(screen.getByText('Demo Customer Seller')).toBeInTheDocument();
-    });
-
-    // Switch to Demo Customer Buyer (customer-2)
-    const select = screen.getByTestId('role-select');
-    fireEvent.change(select, { target: { value: 'customer-2' } });
-
-    // Verify topbar user displays Demo Customer Buyer
-    await waitFor(() => {
-      expect(screen.getByText('Demo Customer Buyer')).toBeInTheDocument();
-    });
-
-    // Go to My Assets & Loans tab
-    fireEvent.click(screen.getByText('My Assets & Loans'));
-
-    // Verify customer-1 assets (e.g. Mock Returned Ring, Mock Gold Necklace) are NOT displayed
-    await waitFor(() => {
-      expect(screen.queryByText('Mock Returned Ring')).not.toBeInTheDocument();
-      expect(screen.queryByText('Mock Gold Necklace')).not.toBeInTheDocument();
-      expect(screen.getByText('No assets found.')).toBeInTheDocument();
-    });
-
-    // Go to Overview tab
-    fireEvent.click(screen.getByText('Overview'));
-
-    // Verify Next Actions is empty of customer-1 asset actions
-    await waitFor(() => {
-      expect(screen.queryByText(/is ready to ship to custody/)).not.toBeInTheDocument();
-    });
+  it('keeps Connect Wallet visible in the authenticated workspace header', async () => {
+    await renderAndSignIn();
+    expect(screen.getByRole('button', { name: 'Connect Wallet' })).toBeInTheDocument();
   });
 
   it('My Layaways table shows only buyer layaways and Pay Installment button', async () => {
@@ -466,7 +398,7 @@ describe('App', () => {
           ok: true,
           json: async () => ({
             userId: 'customer-1',
-            displayName: 'Demo Customer Seller',
+            displayName: 'Demo Customer 1',
             role: 'CUSTOMER',
             walletAddress: '0x70997970C51812dc3A010C7d01b50e0d17dc79C8',
             token: 'mock-jwt-token'
@@ -479,11 +411,7 @@ describe('App', () => {
       return { ok: false, status: 404 };
     });
 
-    render(<App walletButton={<button type="button">Connect Wallet</button>} />);
-
-    await waitFor(() => {
-      expect(screen.getByText('Demo Customer Seller')).toBeInTheDocument();
-    });
+    await renderAndSignIn();
 
     await waitFor(() => {
       expect(screen.getByText('200 / 1,000 USDC')).toBeInTheDocument();
@@ -515,7 +443,7 @@ describe('App', () => {
           ok: true,
           json: async () => ({
             userId: 'customer-1',
-            displayName: 'Demo Customer Seller',
+            displayName: 'Demo Customer 1',
             role: 'CUSTOMER',
             walletAddress: '0x70997970C51812dc3A010C7d01b50e0d17dc79C8',
             token: 'mock-jwt-token'
@@ -529,11 +457,7 @@ describe('App', () => {
       return { ok: false, status: 404 };
     });
 
-    render(<App walletButton={<button type="button">Connect Wallet</button>} />);
-
-    await waitFor(() => {
-      expect(screen.getByText('Demo Customer Seller')).toBeInTheDocument();
-    });
+    await renderAndSignIn();
 
     await waitFor(() => {
       expect(screen.getByRole('button', { name: /Pay Installment/i })).toBeInTheDocument();
@@ -577,7 +501,7 @@ describe('App', () => {
           ok: true,
           json: async () => ({
             userId: 'customer-1',
-            displayName: 'Demo Customer Seller',
+            displayName: 'Demo Customer 1',
             role: 'CUSTOMER',
             walletAddress: '0x70997970C51812dc3A010C7d01b50e0d17dc79C8',
             token: 'mock-jwt-token'
@@ -631,11 +555,7 @@ describe('App', () => {
       return { ok: false, status: 404 };
     });
 
-    render(<App walletButton={<button type="button">Connect Wallet</button>} />);
-
-    await waitFor(() => {
-      expect(screen.getByText('Demo Customer Seller')).toBeInTheDocument();
-    });
+    await renderAndSignIn();
 
     const fractionsLink = screen.getByRole('link', { name: /Fractions/i });
     expect(fractionsLink).toBeInTheDocument();

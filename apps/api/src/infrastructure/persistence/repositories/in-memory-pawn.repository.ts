@@ -41,17 +41,18 @@ export class InMemoryPawnRepository implements PawnRepository {
   private initializeSeededData() {
     const now = new Date();
 
-    // Seed users
+    // Seed demo users. Both customer accounts share the CUSTOMER role and can
+    // buy, sell, fractionalize, and redeem under the same business rules.
     const customerUser: User = {
       id: 'customer-1',
-      displayName: 'Demo Customer Seller',
+      displayName: 'Demo Customer 1',
       role: UserRole.Customer,
       kycStatus: KycStatus.Verified,
       createdAt: new Date(now.getTime() - 30 * 24 * 3600000)
     };
     const customer2User: User = {
       id: 'customer-2',
-      displayName: 'Demo Customer Buyer',
+      displayName: 'Demo Customer 2',
       role: UserRole.Customer,
       kycStatus: KycStatus.Verified,
       createdAt: new Date(now.getTime() - 30 * 24 * 3600000)

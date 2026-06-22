@@ -127,7 +127,7 @@ Configure the backend to use `anvil` mode and start the dev server:
 
 1. Import Charlie's test wallet into MetaMask using his private key:
    `0x7c852118294e51e653712a81e05800f419141751be58f605c371e15141b007a6` (Charlie's address: `0x90F79bf6EB2c4f870365E785982E1f101E93b906`). Note that Charlie is pre-funded with ERC20 stablecoins and has his KYC verification seeded by the deployment scripts.
-2. Select **Demo Customer Buyer** (`customer-2` / Charlie) in the topbar session selector.
+2. Select **Demo Customer 2** (`customer-2` / Charlie) in the topbar session selector.
 3. Switch your connected wallet in MetaMask to Charlie (`0x90F7...b906`). Make sure the connected wallet matches your active session, as the wallet safety guard will block transactions if they do not match.
 4. Go to the **Marketplace** tab and locate the **Gold ring set** (`A-1004`) listed by Alice. Note that the "Buy with Layaway" button is disabled on listings owned by your current active profile to prevent self-trading.
 5. Click **Buy with Layaway** to initiate a layaway on the listing.
@@ -140,7 +140,7 @@ Configure the backend to use `anvil` mode and start the dev server:
 
 ## Step 9: Execute On-Chain Layaway Installment Payments and Completion
 
-1. Select **Demo Customer Buyer** (`customer-2` / Charlie) in the topbar session selector. Ensure Charlie's wallet (`0x90F7...b906`) is connected in MetaMask.
+1. Select **Demo Customer 2** (`customer-2` / Charlie) in the topbar session selector. Ensure Charlie's wallet (`0x90F7...b906`) is connected in MetaMask.
 2. Under **Customer Overview**, navigate to the **My Layaways** section.
 3. Observe the progress display showing the total paid amount vs total price (e.g., `200 / 1000 USDC`) and the calculated next installment amount (e.g., `133 USDC`).
 4. Click **Pay Next Installment**.
@@ -174,7 +174,7 @@ Configure the backend to use `anvil` mode and start the dev server:
 
 ## Step 11: Execute On-Chain Purchase of Fractional Shares
 
-1. Connect Charlie's wallet (`0x90F7...b906`) in MetaMask and select **Demo Customer Buyer** (`customer-2` / Charlie) in the session selector.
+1. Connect Charlie's wallet (`0x90F7...b906`) in MetaMask and select **Demo Customer 2** (`customer-2` / Charlie) in the session selector.
 2. Go to the **Fractions** workspace tab.
 3. Locate the fractionalized pool for the asset (e.g., protocol-fractionalized asset `A-1003` which has 100 available shares).
 4. Click **Buy Shares**.

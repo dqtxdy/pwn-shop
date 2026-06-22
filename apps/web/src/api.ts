@@ -370,3 +370,7 @@ export const api = {
   fetchFractionalAssets: () => getJson<FractionalAsset[]>('/fractions/assets'),
   fetchFractionalPositions: (userId: string) => getJson<FractionalPosition[]>(`/fractions/positions/${userId}`)
 };
+
+export const clearAuthToken = () => {
+  setAuthToken(null);
+};

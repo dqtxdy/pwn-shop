@@ -38,7 +38,7 @@ describe('AuthService', () => {
     it('returns customer session for CUSTOMER role', async () => {
       const session = await service.demoLogin(UserRole.Customer);
       expect(session.userId).toBe('customer-1');
-      expect(session.displayName).toBe('Demo Customer Seller');
+      expect(session.displayName).toBe('Demo Customer 1');
       expect(session.role).toBe(UserRole.Customer);
       expect(session.token).toBeDefined();
       expect(typeof session.token).toBe('string');
@@ -48,7 +48,7 @@ describe('AuthService', () => {
     it('returns customer-2 session for CUSTOMER role with customer-2 option', async () => {
       const session = await service.demoLogin(UserRole.Customer, 'customer-2');
       expect(session.userId).toBe('customer-2');
-      expect(session.displayName).toBe('Demo Customer Buyer');
+      expect(session.displayName).toBe('Demo Customer 2');
       expect(session.role).toBe(UserRole.Customer);
       expect(session.walletAddress).toBe('0x4444444444444444444444444444444444444444');
     });
@@ -137,7 +137,7 @@ describe('AuthService', () => {
     it('returns customer session with Anvil wallet address', async () => {
       const session = await anvilService.demoLogin(UserRole.Customer);
       expect(session.userId).toBe('customer-1');
-      expect(session.displayName).toBe('Demo Customer Seller');
+      expect(session.displayName).toBe('Demo Customer 1');
       expect(session.role).toBe(UserRole.Customer);
       expect(session.walletAddress).toBe('0x70997970c51812dc3a010c7d01b50e0d17dc79c8');
     });
@@ -145,7 +145,7 @@ describe('AuthService', () => {
     it('returns customer-2 session with Anvil wallet address', async () => {
       const session = await anvilService.demoLogin(UserRole.Customer, 'customer-2');
       expect(session.userId).toBe('customer-2');
-      expect(session.displayName).toBe('Demo Customer Buyer');
+      expect(session.displayName).toBe('Demo Customer 2');
       expect(session.role).toBe(UserRole.Customer);
       expect(session.walletAddress).toBe('0x90f79bf6eb2c4f870365e785982e1f101e93b906');
     });
