@@ -1,3 +1,4 @@
+import { ShipmentDirection } from '../../domain/enums';
 import {
   Appraisal,
   Asset,
@@ -30,8 +31,9 @@ export interface PawnRepository {
   saveEvidence(file: EvidenceFile): Promise<EvidenceFile>;
   listEvidence(assetId: string): Promise<EvidenceFile[]>;
   saveShipment(shipment: Shipment): Promise<Shipment>;
-  findShipment(assetId: string): Promise<Shipment | undefined>;
+  findShipment(assetId: string, direction?: ShipmentDirection): Promise<Shipment | undefined>;
   saveAppraisal(appraisal: Appraisal): Promise<Appraisal>;
+  findLatestAppraisalByAssetId(assetId: string): Promise<Appraisal | undefined>;
   saveLoan(loan: Loan): Promise<Loan>;
   findLoan(id: string): Promise<Loan | undefined>;
   saveRepayment(repayment: Repayment): Promise<Repayment>;
@@ -47,6 +49,8 @@ export interface PawnRepository {
   saveBlockchainTransaction(tx: BlockchainTransaction): Promise<BlockchainTransaction>;
   getDashboard(): Promise<PawnDashboard>;
   findWalletByUserId(userId: string): Promise<Wallet | undefined>;
+  findWalletByAddress(address: string): Promise<Wallet | undefined>;
+  deleteWallet(id: string): Promise<void>;
   reset?(): Promise<void>;
 
   // Fractionalization methods

@@ -227,19 +227,19 @@ export class FractionsController {
   @Post('fractionalize')
   @Roles(UserRole.Customer, UserRole.Admin)
   fractionalize(@Body() dto: FractionalizeAssetDto, @CurrentUser() user: AuthenticatedUser) {
-    return this.workflow.fractionalizeAsset(dto, user.id);
+    return this.workflow.fractionalizeAsset(dto, user);
   }
 
   @Post('buy')
   @Roles(UserRole.Customer)
   buy(@Body() dto: BuyFractionsDto, @CurrentUser() user: AuthenticatedUser) {
-    return this.workflow.buyFractions(dto, user.id);
+    return this.workflow.buyFractions(dto, user);
   }
 
   @Post('redeem')
   @Roles(UserRole.Customer)
   redeem(@Body() dto: RedeemAssetDto, @CurrentUser() user: AuthenticatedUser) {
-    return this.workflow.redeemAsset(dto, user.id);
+    return this.workflow.redeemAsset(dto, user);
   }
 
   @Get('assets')

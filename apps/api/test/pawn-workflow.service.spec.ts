@@ -17,14 +17,15 @@ import {
   MockPriceOracle,
   MockStorageProvider
 } from '../src/infrastructure/adapters/mock-external.adapters';
-import { AssetStatus } from '../src/domain/enums';
+import { AssetStatus, LoanStatus, KycStatus, UserRole, ListingStatus, DisputeStatus, ShipmentDirection } from '../src/domain/enums';
 
 describe('PawnWorkflowService', () => {
   let service: PawnWorkflowService;
   let repository: InMemoryPawnRepository;
+  let moduleRef: any;
 
   beforeEach(async () => {
-    const moduleRef = await Test.createTestingModule({
+    moduleRef = await Test.createTestingModule({
       providers: [
         PawnWorkflowService,
         { provide: PAWN_REPOSITORY, useClass: InMemoryPawnRepository },
@@ -37,7 +38,7 @@ describe('PawnWorkflowService', () => {
     }).compile();
 
     service = moduleRef.get(PawnWorkflowService);
-    repository = moduleRef.get<InMemoryPawnRepository>(PAWN_REPOSITORY);
+    repository = moduleRef.get(PAWN_REPOSITORY);
   });
 
   it('creates an asset and records it in the dashboard', async () => {
@@ -52,6 +53,45 @@ describe('PawnWorkflowService', () => {
     const dashboard = await service.dashboard();
     expect(dashboard.assets).toContainEqual(asset);
     expect(dashboard.auditEvents[0].action).toBe('ASSET_SUBMITTED');
+  });
+
+  it('marks rejected offers as REJECTED and keeps the collateral in custody', async () => {
+    await service.createAppraisal({
+      assetId: 'A-1004',
+      appraiserId: 'staff-1',
+      estimatedValue: 1500,
+      ltvBps: 6000,
+      interestAprBps: 500
+    });
+
+    const loan = await service.createLoanOffer({
+      assetId: 'A-1004',
+      borrowerId: 'customer-1',
+      principal: 900,
+      durationDays: 30
+    });
+
+    const rejected = await service.rejectLoan(loan.id);
+    expect(rejected.status).toBe(LoanStatus.Rejected);
+
+    const asset = await repository.findAsset('A-1004');
+    expect(asset?.status).toBe(AssetStatus.Received);
+  });
+
+  it('moves repaid collateral to RETURNING so return workflow can continue', async () => {
+    const repayment = await service.recordRepayment({
+      loanId: 'L-202',
+      amount: 1085,
+      txHash: '0xrepayment'
+    });
+
+    expect(repayment.loanId).toBe('L-202');
+
+    const repaidLoan = await repository.findLoan('L-202');
+    expect(repaidLoan?.status).toBe(LoanStatus.Repaid);
+
+    const asset = await repository.findAsset('A-1002');
+    expect(asset?.status).toBe(AssetStatus.Returning);
   });
 
   describe('createListing', () => {
@@ -700,6 +740,12 @@ describe('PawnWorkflowService', () => {
     });
 
     it('handles primary market fractionalization, fraction purchase, and redemption in Mock mode', async () => {
+      const listing = await repository.findListing('LIST-001');
+      if (listing) {
+        listing.status = 'CANCELLED' as any;
+        await repository.saveListing(listing);
+      }
+
       // Admin fractionalization of a protocol-owned asset (e.g. A-1005 which has status LISTED by default)
       const assetA1005 = await repository.findAsset('A-1005');
       expect(assetA1005).toBeDefined();
@@ -765,6 +811,12 @@ describe('PawnWorkflowService', () => {
     });
 
     it('rejects buying fractions when user is not KYC verified', async () => {
+      const listing = await repository.findListing('LIST-001');
+      if (listing) {
+        listing.status = 'CANCELLED' as any;
+        await repository.saveListing(listing);
+      }
+
       // Set customer-2 KYC to rejected or not started
       const user = await repository.findUserByWallet('0x90f79bf6eb2c4f870365e785982e1f101e93b906');
       user!.kycStatus = 'REJECTED' as any;
@@ -783,6 +835,293 @@ describe('PawnWorkflowService', () => {
           sharesToBuy: 10
         }, 'customer-2')
       ).rejects.toThrow('KYC verification required to buy fractions');
+    });
+  });
+
+  describe('Product Readiness Updates', () => {
+    it('updates user KYC status and enables buyFractions for verified user', async () => {
+      await repository.saveUser({
+        id: 'new-customer-1',
+        displayName: 'New Customer',
+        role: UserRole.Customer,
+        kycStatus: KycStatus.NotStarted,
+        createdAt: new Date()
+      });
+
+      const A1004 = await repository.findAsset('A-1004');
+      A1004!.status = AssetStatus.Listed;
+      await repository.saveAsset(A1004!);
+      
+      const adminActor = { id: 'admin-1', role: UserRole.Admin, wallet: '0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266' };
+      const fracAsset = await service.fractionalizeAsset({
+        assetId: 'A-1004',
+        totalShares: 100,
+        targetPrice: 2000
+      }, adminActor);
+
+      const actor = { id: 'new-customer-1', role: UserRole.Customer, wallet: '0x9999999999999999999999999999999999999999' };
+      await expect(
+        service.buyFractions({ assetId: 'A-1004', sharesToBuy: 10 }, actor)
+      ).rejects.toThrow('KYC verification required to buy fractions');
+
+      await service.requestKyc('new-customer-1', '0x9999999999999999999999999999999999999999');
+
+      const buyRes = await service.buyFractions({ assetId: 'A-1004', sharesToBuy: 10 }, actor);
+      expect(buyRes).toBeDefined();
+      expect((buyRes as any).availableShares).toBe(90);
+    });
+
+    it('rejects requestKyc if the wallet address is already linked to another user', async () => {
+      const seededWallet = '0x1111111111111111111111111111111111111111';
+      await expect(
+        service.requestKyc('customer-2', seededWallet)
+      ).rejects.toThrow('is already linked to another user');
+    });
+
+    it('uses the new wallet address provided in session instead of seed wallet address', async () => {
+      const asset = await repository.findAsset('A-1004');
+      asset!.status = AssetStatus.Received;
+      await repository.saveAsset(asset!);
+
+      const actorWithNewWallet = {
+        id: 'customer-1',
+        role: UserRole.Customer,
+        wallet: '0xabcabcabcabcabcabcabcabcabcabcabcabcabca'
+      };
+
+      const gateway = moduleRef.get(BLOCKCHAIN_GATEWAY) as any;
+      const originalConfig = gateway.getBlockchainConfig();
+      gateway.getBlockchainConfig = () => ({ mode: 'anvil' });
+
+      let capturedSellerWallet = '';
+      const originalPrepare = gateway.prepareCreateListing;
+      gateway.prepareCreateListing = async (input: any) => {
+        capturedSellerWallet = input.sellerWallet;
+        return {
+          status: 'AWAITING_WALLET_EXECUTION',
+          actions: []
+        };
+      };
+
+      const res = await service.createListing({
+        assetId: 'A-1004',
+        price: 1500,
+        isProtocolOwned: false
+      }, actorWithNewWallet);
+
+      expect(res).toBeDefined();
+      expect(capturedSellerWallet).toBe('0xabcabcabcabcabcabcabcabcabcabcabcabcabca');
+
+      gateway.prepareCreateListing = originalPrepare;
+      gateway.getBlockchainConfig = () => originalConfig;
+    });
+
+    it('restricts appraisal to RECEIVED or UNDER_APPRAISAL assets', async () => {
+      const asset = await repository.findAsset('A-1004');
+      asset!.status = AssetStatus.Listed;
+      await repository.saveAsset(asset!);
+
+      await expect(
+        service.createAppraisal({
+          assetId: 'A-1004',
+          appraiserId: 'staff-1',
+          estimatedValue: 1000,
+          ltvBps: 6000,
+          interestAprBps: 500
+        })
+      ).rejects.toThrow('Appraisal can only be created for RECEIVED or UNDER_APPRAISAL assets');
+    });
+
+    it('rejects loan offer principal exceeding maximum LTV', async () => {
+      const asset = await repository.findAsset('A-1004');
+      asset!.status = AssetStatus.Received;
+      await repository.saveAsset(asset!);
+
+      await service.createAppraisal({
+        assetId: 'A-1004',
+        appraiserId: 'staff-1',
+        estimatedValue: 1000,
+        ltvBps: 6000,
+        interestAprBps: 500
+      });
+
+      await expect(
+        service.createLoanOffer({
+          assetId: 'A-1004',
+          borrowerId: 'customer-1',
+          principal: 700,
+          durationDays: 30
+        })
+      ).rejects.toThrow('Principal 700 exceeds the maximum LTV of 600');
+    });
+
+    it('rejects duplicate active/offered loans on the same asset', async () => {
+      const asset = await repository.findAsset('A-1004');
+      asset!.status = AssetStatus.Received;
+      await repository.saveAsset(asset!);
+
+      await service.createAppraisal({
+        assetId: 'A-1004',
+        appraiserId: 'staff-1',
+        estimatedValue: 1000,
+        ltvBps: 6000,
+        interestAprBps: 500
+      });
+
+      await service.createLoanOffer({
+        assetId: 'A-1004',
+        borrowerId: 'customer-1',
+        principal: 500,
+        durationDays: 30
+      });
+
+      await expect(
+        service.createLoanOffer({
+          assetId: 'A-1004',
+          borrowerId: 'customer-1',
+          principal: 500,
+          durationDays: 30
+        })
+      ).rejects.toThrow('An offered or active loan already exists for this asset');
+    });
+
+    it('correctly maps return shipment statuses and updates asset status from RETURNING to RETURNED', async () => {
+      const asset = await repository.findAsset('A-1004');
+      asset!.status = AssetStatus.Returning;
+      await repository.saveAsset(asset!);
+
+      const shipment = await service.createShipment({
+        assetId: 'A-1004',
+        direction: 'RETURN_TO_CUSTOMER' as any,
+        carrier: 'DHL',
+        codRequired: false
+      }, { id: 'staff-1', role: UserRole.Staff });
+
+      expect(shipment).toBeDefined();
+      expect(shipment.direction).toBe('RETURN_TO_CUSTOMER');
+      
+      const updatedAsset = await repository.findAsset('A-1004');
+      expect(updatedAsset!.status).toBe(AssetStatus.Returning);
+
+      const logistics = moduleRef.get(LOGISTICS_PROVIDER) as any;
+      logistics.track = async () => ({
+        status: 'DELIVERED',
+        checkedAt: new Date()
+      });
+
+      await service.trackShipment('A-1004');
+      const deliveredAsset = await repository.findAsset('A-1004');
+      expect(deliveredAsset!.status).toBe(AssetStatus.Returned);
+    });
+
+    it('supports inbound shipment tracking to RECEIVED, followed by return shipment tracking to RETURNED', async () => {
+      // 1. Create a draft asset
+      await repository.saveAsset({
+        id: 'A-TEST-SHIP',
+        ownerId: 'customer-1',
+        title: 'Shipment Test Asset',
+        category: 'Electronics',
+        description: 'Test description',
+        status: AssetStatus.AwaitingShipment,
+        declaredValue: 500,
+        createdAt: new Date()
+      });
+
+      // 2. Create inbound shipment (TO_SHOP)
+      await service.createShipment({
+        assetId: 'A-TEST-SHIP',
+        direction: 'TO_SHOP' as any,
+        carrier: 'DHL',
+        codRequired: false
+      }, { id: 'customer-1', role: UserRole.Customer });
+
+      const inboundShipment = await repository.findShipment('A-TEST-SHIP', ShipmentDirection.ToShop);
+      expect(inboundShipment).toBeDefined();
+      expect(inboundShipment!.direction).toBe(ShipmentDirection.ToShop);
+
+      // 3. Track inbound shipment as DELIVERED -> Asset status becomes RECEIVED
+      const logistics = moduleRef.get(LOGISTICS_PROVIDER) as any;
+      logistics.track = async () => ({
+        status: 'DELIVERED',
+        checkedAt: new Date()
+      });
+
+      await service.trackShipment('A-TEST-SHIP');
+      const receivedAsset = await repository.findAsset('A-TEST-SHIP');
+      expect(receivedAsset!.status).toBe(AssetStatus.Received);
+
+      // 4. Create return shipment (RETURN_TO_CUSTOMER)
+      receivedAsset!.status = AssetStatus.Returning;
+      await repository.saveAsset(receivedAsset!);
+
+      await service.createShipment({
+        assetId: 'A-TEST-SHIP',
+        direction: 'RETURN_TO_CUSTOMER' as any,
+        carrier: 'FedEx',
+        codRequired: false
+      }, { id: 'staff-1', role: UserRole.Staff });
+
+      const returnShipment = await repository.findShipment('A-TEST-SHIP', ShipmentDirection.ReturnToCustomer);
+      expect(returnShipment).toBeDefined();
+      expect(returnShipment!.direction).toBe(ShipmentDirection.ReturnToCustomer);
+
+      // 5. Track shipment as DELIVERED -> Asset status becomes RETURNED
+      await service.trackShipment('A-TEST-SHIP');
+      const returnedAsset = await repository.findAsset('A-TEST-SHIP');
+      expect(returnedAsset!.status).toBe(AssetStatus.Returned);
+    });
+
+    it('blocks listing creation and fractionalization when asset is reserved for layaway', async () => {
+      const asset = await repository.findAsset('A-1004');
+      asset!.status = AssetStatus.Received;
+      await repository.saveAsset(asset!);
+
+      const listing = await service.createListing({
+        assetId: 'A-1004',
+        price: 1000,
+        isProtocolOwned: false
+      }, { id: 'customer-1', role: UserRole.Customer });
+
+      await service.createLayaway({
+        listingId: (listing as any).id,
+        buyerId: 'customer-2',
+        monthsDuration: 6,
+        downPayment: 250
+      }, { id: 'customer-2', role: UserRole.Customer });
+
+      await expect(
+        service.createListing({
+          assetId: 'A-1004',
+          price: 1200,
+          isProtocolOwned: false
+        }, { id: 'customer-1', role: UserRole.Customer })
+      ).rejects.toThrow('Active listing already exists for this asset');
+
+      await expect(
+        service.fractionalizeAsset({
+          assetId: 'A-1004',
+          totalShares: 100,
+          targetPrice: 2000
+        }, { id: 'customer-1', role: UserRole.Customer })
+      ).rejects.toThrow('Asset has an active or reserved listing');
+    });
+
+    it('restores the correct listed/loan-active status after resolving a dispute', async () => {
+      const asset = await repository.findAsset('A-1004');
+      asset!.status = AssetStatus.LoanActive;
+      await repository.saveAsset(asset!);
+
+      const dispute = await service.createDispute({
+        assetId: 'A-1004',
+        evidenceExportUri: 'ipfs://dispute-evidence'
+      }, { id: 'customer-1', role: UserRole.Customer });
+
+      const disputedAsset = await repository.findAsset('A-1004');
+      expect(disputedAsset!.status).toBe(AssetStatus.Disputed);
+
+      await service.resolveDispute(dispute.id, { resolution: 'Restored collateral' });
+      const resolvedAsset = await repository.findAsset('A-1004');
+      expect(resolvedAsset!.status).toBe(AssetStatus.LoanActive);
     });
   });
 });

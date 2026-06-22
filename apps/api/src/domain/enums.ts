@@ -47,6 +47,7 @@ export enum ShipmentStatus {
 export enum LoanStatus {
   Offered = 'OFFERED',
   Active = 'ACTIVE',
+  Rejected = 'REJECTED',
   Repaid = 'REPAID',
   Defaulted = 'DEFAULTED',
   Liquidated = 'LIQUIDATED'

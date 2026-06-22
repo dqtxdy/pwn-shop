@@ -399,8 +399,11 @@ async function waitReceiptBounded(
     const repayData = protocolIface.encodeFunctionData('repayPawn', [1]);
     const repayReceipt = await executeActionWithDiagnostics(aliceKey, { to: pawnProtocolAddress, calldata: repayData }, 'Alice Repay Pawn');
 
+    const interest = (finalLoan.principal * finalLoan.aprBps * finalLoan.durationDays) / 3650000;
+    const amountDue = finalLoan.principal + interest;
+
     const repayment = await workflowService.recordRepayment({
-      loanId: finalLoan.id, amount: 900, txHash: repayReceipt.transactionHash,
+      loanId: finalLoan.id, amount: amountDue, txHash: repayReceipt.transactionHash,
     });
     expect(repayment).toBeDefined();
     expect(repayment.loanId).toBe(finalLoan.id);

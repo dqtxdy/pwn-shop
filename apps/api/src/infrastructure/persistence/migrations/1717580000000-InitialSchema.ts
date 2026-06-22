@@ -188,6 +188,7 @@ export class InitialSchema1717580000000 implements MigrationInterface {
         "status" character varying NOT NULL,
         "evidenceExportUri" character varying,
         "resolution" text,
+        "previousAssetStatus" character varying,
         "createdAt" timestamp with time zone NOT NULL,
         CONSTRAINT "PK_disputes_id" PRIMARY KEY ("id")
       )

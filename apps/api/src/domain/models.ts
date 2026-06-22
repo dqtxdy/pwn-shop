@@ -156,6 +156,7 @@ export interface Dispute {
   evidenceExportUri?: string;
   resolution?: string;
   createdAt: Date;
+  previousAssetStatus?: string;
 }
 
 export interface AuditEvent {

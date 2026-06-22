@@ -923,7 +923,7 @@ export default function App({ walletButton }: AppProps) {
     setActionLoadingId(loanId);
     try {
       await api.rejectLoan(loanId);
-      addNotification('success', 'Loan offer rejected successfully. The asset has been returned to received status.');
+      addNotification('success', 'Loan offer rejected successfully. The collateral remains in custody for the next staff decision.');
       await loadData();
     } catch (err: any) {
       addNotification('error', err.message || 'Failed to reject loan offer');
@@ -1053,17 +1053,36 @@ export default function App({ walletButton }: AppProps) {
 
   const onSubmitListing = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!session || !session.walletAddress || !listingAssetId) {
-      addNotification('error', 'Session wallet address and listing asset are required');
+    if (!session || !listingAssetId) {
+      addNotification('error', 'Session and listing asset are required');
+      return;
+    }
+    const listingAsset = dashboard?.assets.find((asset) => asset.id === listingAssetId);
+    const isProtocolOwnedListing =
+      session.role === 'ADMIN' && listingAsset ? listingAsset.ownerId !== session.userId : false;
+    const requiresWallet = blockchainConfig?.mode === 'anvil' && !isProtocolOwnedListing;
+
+    if (blockchainConfig?.mode === 'anvil' && isProtocolOwnedListing) {
+      addNotification('error', 'Protocol-owned listings are only supported in mock mode right now.');
       return;
     }
 
-    if (blockchainConfig?.mode === 'anvil') {
+    if (requiresWallet && !session.walletAddress) {
+      addNotification('error', 'Session wallet address is required');
+      return;
+    }
+
+    const sessionWalletAddress = session.walletAddress;
+
+    if (requiresWallet) {
       if (!isConnected || !connectedAddress) {
         addNotification('error', CONNECT_WALLET_MESSAGE);
         return;
       }
-      if (connectedAddress.toLowerCase() !== session.walletAddress.toLowerCase()) {
+      if (!sessionWalletAddress) {
+        return;
+      }
+      if (connectedAddress.toLowerCase() !== sessionWalletAddress.toLowerCase()) {
         addNotification('error', WALLET_MISMATCH_MESSAGE);
         return;
       }
@@ -1079,7 +1098,7 @@ export default function App({ walletButton }: AppProps) {
         const response = await api.createListing({
           assetId: listingAssetId,
           price: Number(listPrice),
-          isProtocolOwned: false
+          isProtocolOwned: isProtocolOwnedListing
         });
 
         if (response && 'status' in response && response.status === 'AWAITING_WALLET_EXECUTION') {
@@ -1108,7 +1127,7 @@ export default function App({ walletButton }: AppProps) {
           await api.createListing({
             assetId: listingAssetId,
             price: Number(listPrice),
-            isProtocolOwned: false,
+            isProtocolOwned: isProtocolOwnedListing,
             txHash: listingHash
           });
         }
@@ -1116,7 +1135,7 @@ export default function App({ walletButton }: AppProps) {
         await api.createListing({
           assetId: listingAssetId,
           price: Number(listPrice),
-          isProtocolOwned: false
+          isProtocolOwned: isProtocolOwnedListing
         });
       }
       addNotification('success', 'Asset listed.');
@@ -2964,7 +2983,7 @@ export default function App({ walletButton }: AppProps) {
                         </Button>
                       )}
                       
-                      {['RECEIVED', 'RETURNED'].includes(selectedAdminAsset.status) && !marketplace.some((m) => m.assetId === selectedAdminAsset.id && m.status === 'ACTIVE') && (
+                      {selectedAdminAsset.status === 'LISTED' && !marketplace.some((m) => m.assetId === selectedAdminAsset.id && m.status === 'ACTIVE') && (
                         <Button
                           variant="primary"
                           onClick={() => handleListAsset(selectedAdminAsset.id)}
@@ -3365,18 +3384,6 @@ export default function App({ walletButton }: AppProps) {
                 <span>Show password</span>
               </label>
 
-              {/* MetaMask wallet status banner */}
-              <div className="login-wallet-status">
-                <div className="login-wallet-status__icon">{isConnected ? '🟢' : '⚪'}</div>
-                <div className="login-wallet-status__text">
-                  {isConnected && connectedAddress
-                    ? <><strong>MetaMask connected:</strong> <code>{connectedAddress.slice(0, 8)}...{connectedAddress.slice(-6)}</code> — this wallet will be linked to your session.</>  
-                    : <><strong>MetaMask not connected.</strong> You can still sign in — blockchain features will be unavailable until you connect a wallet.</>}
-                </div>
-                <div className="login-wallet-status__button">
-                  {walletButton}
-                </div>
-              </div>
 
               <div className="login-actions">
                 <button className="login-button login-button--primary" type="submit" disabled={loginLoading}>
@@ -3507,7 +3514,7 @@ export default function App({ walletButton }: AppProps) {
         onDismiss={() => setIsListModalVisible(false)}
         visible={isListModalVisible}
         closeAriaLabel="Close modal"
-        header="List Asset for Sale"
+        header={session.role === 'ADMIN' ? 'Create Protocol Marketplace Listing' : 'List Asset for Sale'}
         size="medium"
       >
         <form onSubmit={onSubmitListing}>
@@ -3523,6 +3530,11 @@ export default function App({ walletButton }: AppProps) {
                 placeholder="2000"
               />
             </FormField>
+            {session.role === 'ADMIN' && (
+              <Box color="text-body-secondary">
+                Admin listings publish protocol-owned inventory. In this demo they are available only in mock mode and only for assets already marked `LISTED`.
+              </Box>
+            )}
             <div className="modal-actions">
               <Button variant="link" onClick={() => setIsListModalVisible(false)}>Cancel</Button>
               <Button variant="primary" formAction="submit" loading={actionLoadingId === listingAssetId}>

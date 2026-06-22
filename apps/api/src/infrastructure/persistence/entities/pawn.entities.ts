@@ -149,6 +149,9 @@ export class DisputeEntity {
 
   @Column({ nullable: true })
   resolution?: string;
+
+  @Column({ nullable: true })
+  previousAssetStatus?: string;
 }
 
 @Entity('audit_events')

@@ -21,6 +21,9 @@ export class DisputeEntity {
   @Column({ type: 'text', nullable: true })
   resolution?: string;
 
+  @Column({ nullable: true })
+  previousAssetStatus?: string;
+
   @Column({ type: 'timestamp with time zone' })
   createdAt!: Date;
 }

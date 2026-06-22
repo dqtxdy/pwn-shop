@@ -87,6 +87,60 @@ describe('PawnRepository Contract Tests', () => {
       expect(found?.displayName).toBe('Test User 1');
     });
 
+    testFn('should support findWalletByAddress and deleteWallet', async () => {
+      if (!repo) return;
+
+      const user1: User = {
+        id: 'u1',
+        displayName: 'User 1',
+        role: UserRole.Customer,
+        kycStatus: KycStatus.Verified,
+        createdAt: new Date()
+      };
+      const user2: User = {
+        id: 'u2',
+        displayName: 'User 2',
+        role: UserRole.Customer,
+        kycStatus: KycStatus.Verified,
+        createdAt: new Date()
+      };
+      await repo.saveUser(user1);
+      await repo.saveUser(user2);
+
+      const wallet1: Wallet = {
+        id: 'w1',
+        userId: 'u1',
+        address: '0x7777777777777777777777777777777777777777',
+        chainId: 1,
+        verifiedAt: new Date()
+      };
+      await repo.saveWallet(wallet1);
+
+      // Find by address
+      const found = await repo.findWalletByAddress('0x7777777777777777777777777777777777777777');
+      expect(found).toBeDefined();
+      expect(found!.userId).toBe('u1');
+
+      // Delete wallet
+      await repo.deleteWallet(wallet1.id);
+      const foundAfterDelete = await repo.findWalletByAddress('0x7777777777777777777777777777777777777777');
+      expect(foundAfterDelete).toBeUndefined();
+
+      // Now we can save user2's wallet with same address without unique constraint violation
+      const wallet2: Wallet = {
+        id: 'w2',
+        userId: 'u2',
+        address: '0x7777777777777777777777777777777777777777',
+        chainId: 1,
+        verifiedAt: new Date()
+      };
+      await repo.saveWallet(wallet2);
+
+      const found2 = await repo.findWalletByAddress('0x7777777777777777777777777777777777777777');
+      expect(found2).toBeDefined();
+      expect(found2!.userId).toBe('u2');
+    });
+
     testFn('should save mixed-case wallet address and perform case-insensitive lookups', async () => {
       if (!repo) return;
 

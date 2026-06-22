@@ -106,6 +106,26 @@ export class InMemoryPawnRepository implements PawnRepository {
       chainId: 1,
       verifiedAt: now
     };
+
+    if (process.env.BLOCKCHAIN_MODE === 'anvil') {
+      customerWallet.address = '0x70997970c51812dc3a010c7d01b50e0d17dc79c8';
+      customerWallet.chainId = 31337;
+
+      customer2Wallet.address = '0x90f79bf6eb2c4f870365eb785982e1f101e93b906';
+      customer2Wallet.chainId = 31337;
+
+      staffWallet.address = '0x3c44cdddb6a900fa2b585dd299e03d12fa4293bc';
+      staffWallet.chainId = 31337;
+
+      adminWallet.address = '0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266';
+      adminWallet.chainId = 31337;
+    }
+
+    customerWallet.address = customerWallet.address.toLowerCase();
+    customer2Wallet.address = customer2Wallet.address.toLowerCase();
+    staffWallet.address = staffWallet.address.toLowerCase();
+    adminWallet.address = adminWallet.address.toLowerCase();
+
     this.wallets.set(customerWallet.id, customerWallet);
     this.wallets.set(customer2Wallet.id, customer2Wallet);
     this.wallets.set(staffWallet.id, staffWallet);
@@ -485,13 +505,25 @@ export class InMemoryPawnRepository implements PawnRepository {
     return shipment;
   }
 
-  async findShipment(assetId: string): Promise<Shipment | undefined> {
-    return [...this.shipments.values()].find((shipment) => shipment.assetId === assetId);
+  async findShipment(assetId: string, direction?: ShipmentDirection): Promise<Shipment | undefined> {
+    const shipments = [...this.shipments.values()]
+      .filter((s) => s.assetId === assetId)
+      .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime());
+    if (direction) {
+      return shipments.find((s) => s.direction === direction);
+    }
+    return shipments[0];
   }
 
   async saveAppraisal(appraisal: Appraisal): Promise<Appraisal> {
     this.appraisals.set(appraisal.id, appraisal);
     return appraisal;
+  }
+
+  async findLatestAppraisalByAssetId(assetId: string): Promise<Appraisal | undefined> {
+    const assetAppraisals = [...this.appraisals.values()].filter((a) => a.assetId === assetId);
+    if (assetAppraisals.length === 0) return undefined;
+    return assetAppraisals.reduce((latest, current) => current.createdAt > latest.createdAt ? current : latest, assetAppraisals[0]);
   }
 
   async saveLoan(loan: Loan): Promise<Loan> {
@@ -568,6 +600,14 @@ export class InMemoryPawnRepository implements PawnRepository {
 
   async findWalletByUserId(userId: string): Promise<Wallet | undefined> {
     return [...this.wallets.values()].find((w) => w.userId === userId);
+  }
+
+  async findWalletByAddress(address: string): Promise<Wallet | undefined> {
+    return [...this.wallets.values()].find((w) => w.address.toLowerCase() === address.toLowerCase());
+  }
+
+  async deleteWallet(id: string): Promise<void> {
+    this.wallets.delete(id);
   }
 
   async saveFractionalAsset(asset: FractionalAsset): Promise<FractionalAsset> {

@@ -1,4 +1,4 @@
-import { ForbiddenException, Inject, Injectable, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Inject, Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { randomUUID } from 'crypto';
 import { verifyMessage } from 'ethers';
@@ -106,6 +106,29 @@ export class AuthService {
 
     // Normalize the wallet address sent by the frontend (may be undefined if not connected)
     const normalizedWallet = walletAddress ? walletAddress.toLowerCase() : undefined;
+
+    if (normalizedWallet) {
+      const existingWalletWithAddress = await this.repository.findWalletByAddress(normalizedWallet);
+      if (existingWalletWithAddress && existingWalletWithAddress.userId !== user.id) {
+        throw new BadRequestException(`Wallet address ${normalizedWallet} is already linked to another user`);
+      }
+
+      let wallet = await this.repository.findWalletByUserId(user.id);
+      if (wallet) {
+        wallet.address = normalizedWallet;
+        wallet.verifiedAt = new Date();
+        await this.repository.saveWallet(wallet);
+      } else {
+        wallet = {
+          id: randomUUID(),
+          userId: user.id,
+          address: normalizedWallet,
+          chainId: 1, // Default chainId
+          verifiedAt: new Date()
+        };
+        await this.repository.saveWallet(wallet);
+      }
+    }
 
     const token = await this.jwtService.signAsync({
       sub: user.id,

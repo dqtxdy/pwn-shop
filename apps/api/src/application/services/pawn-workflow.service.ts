@@ -18,7 +18,9 @@ import {
   LoanStatus,
   ShipmentStatus,
   LayawayStatus,
-  UserRole
+  UserRole,
+  KycStatus,
+  ShipmentDirection
 } from '../../domain/enums';
 import {
   Appraisal,
@@ -95,6 +97,37 @@ export class PawnWorkflowService {
 
   async requestKyc(userId: string, walletAddress: string) {
     const result = await this.kycProvider.verifyWalletOwner(userId, walletAddress);
+
+    const user = await this.repository.findUserById(userId);
+    if (user) {
+      user.kycStatus = result.status;
+      await this.repository.saveUser(user);
+    }
+
+    if (result.status === KycStatus.Verified) {
+      const normalizedWallet = walletAddress.toLowerCase();
+      const existingWalletWithAddress = await this.repository.findWalletByAddress(normalizedWallet);
+      if (existingWalletWithAddress && existingWalletWithAddress.userId !== userId) {
+        throw new BadRequestException(`Wallet address ${normalizedWallet} is already linked to another user`);
+      }
+
+      let wallet = await this.repository.findWalletByUserId(userId);
+      if (wallet) {
+        wallet.address = normalizedWallet;
+        wallet.verifiedAt = new Date();
+        await this.repository.saveWallet(wallet);
+      } else {
+        wallet = {
+          id: randomUUID(),
+          userId,
+          address: normalizedWallet,
+          chainId: 1,
+          verifiedAt: new Date()
+        };
+        await this.repository.saveWallet(wallet);
+      }
+    }
+
     return this.repository.saveKycVerification({
       id: randomUUID(),
       userId,
@@ -162,13 +195,46 @@ export class PawnWorkflowService {
     return evidence;
   }
 
-  async createShipment(dto: CreateShipmentDto, actor?: { id: string; role: UserRole }): Promise<Shipment> {
-    const asset = await this.requireAsset(dto.assetId);
-    if (actor && actor.role === UserRole.Customer) {
-      if (asset.ownerId !== actor.id) {
-        throw new ForbiddenException('Cannot ship another user\'s asset');
+  private determineAssetStatus(direction: ShipmentDirection, shipmentStatus: ShipmentStatus): AssetStatus | undefined {
+    if (direction === ShipmentDirection.ToShop) {
+      if (shipmentStatus === ShipmentStatus.Delivered) {
+        return AssetStatus.Received;
+      } else {
+        return AssetStatus.InTransit;
+      }
+    } else if (direction === ShipmentDirection.ReturnToCustomer) {
+      if (shipmentStatus === ShipmentStatus.Delivered) {
+        return AssetStatus.Returned;
+      } else {
+        return AssetStatus.Returning;
       }
     }
+    return undefined;
+  }
+
+  async createShipment(dto: CreateShipmentDto, actor?: { id: string; role: UserRole }): Promise<Shipment> {
+    const asset = await this.requireAsset(dto.assetId);
+    if (actor) {
+      if (actor.role === UserRole.Customer) {
+        if (dto.direction !== ShipmentDirection.ToShop) {
+          throw new ForbiddenException('Customer can only ship TO_SHOP');
+        }
+        if (asset.status !== AssetStatus.AwaitingShipment) {
+          throw new BadRequestException('Asset must be in AWAITING_SHIPMENT status');
+        }
+        if (asset.ownerId !== actor.id) {
+          throw new ForbiddenException('Cannot ship another user\'s asset');
+        }
+      } else if (actor.role === UserRole.Staff) {
+        if (dto.direction !== ShipmentDirection.ReturnToCustomer) {
+          throw new ForbiddenException('Staff can only ship RETURN_TO_CUSTOMER');
+        }
+        if (asset.status !== AssetStatus.Returning) {
+          throw new BadRequestException('Asset must be in RETURNING status');
+        }
+      }
+    }
+
     const result = await this.logisticsProvider.createShipment(dto);
     const shipment = await this.repository.saveShipment({
       id: randomUUID(),
@@ -181,8 +247,12 @@ export class PawnWorkflowService {
       updatedAt: new Date()
     });
 
-    asset.status = result.status === ShipmentStatus.Delivered ? AssetStatus.Received : AssetStatus.InTransit;
-    await this.repository.saveAsset(asset);
+    const newAssetStatus = this.determineAssetStatus(shipment.direction, shipment.status);
+    if (newAssetStatus) {
+      asset.status = newAssetStatus;
+      await this.repository.saveAsset(asset);
+    }
+
     await this.audit('system', 'SHIPMENT_CREATED', 'Asset', dto.assetId, { trackingCode: shipment.trackingCode });
     return shipment;
   }
@@ -197,16 +267,39 @@ export class PawnWorkflowService {
       }
     }
 
-    const shipment = await this.repository.findShipment(assetId);
+    let shipment = await this.repository.findShipment(assetId, ShipmentDirection.ReturnToCustomer);
+    if (!shipment) {
+      shipment = await this.repository.findShipment(assetId);
+    }
     if (!shipment) throw new NotFoundException('Shipment not found');
     const result = await this.logisticsProvider.track(shipment.trackingCode);
     shipment.status = result.status;
     shipment.updatedAt = result.checkedAt;
+
+    const newAssetStatus = this.determineAssetStatus(shipment.direction, shipment.status);
+    if (newAssetStatus) {
+      asset.status = newAssetStatus;
+      await this.repository.saveAsset(asset);
+    }
+
     return this.repository.saveShipment(shipment);
   }
 
   async createAppraisal(dto: CreateAppraisalDto): Promise<Appraisal> {
     const asset = await this.requireAsset(dto.assetId);
+    if (asset.status !== AssetStatus.Received && asset.status !== AssetStatus.UnderAppraisal) {
+      throw new BadRequestException('Appraisal can only be created for RECEIVED or UNDER_APPRAISAL assets');
+    }
+    if (dto.estimatedValue <= 0) {
+      throw new BadRequestException('estimatedValue must be positive');
+    }
+    if (dto.ltvBps <= 0 || dto.ltvBps > 10000) {
+      throw new BadRequestException('ltvBps must be > 0 and <= 10000');
+    }
+    if (dto.interestAprBps < 0 || dto.interestAprBps > 10000) {
+      throw new BadRequestException('interestAprBps must be >= 0 and <= 10000');
+    }
+
     asset.status = AssetStatus.OfferIssued;
     await this.repository.saveAsset(asset);
 
@@ -245,6 +338,34 @@ export class PawnWorkflowService {
   }
 
   async createLoanOffer(dto: CreateLoanOfferDto): Promise<Loan> {
+    const asset = await this.repository.findAsset(dto.assetId);
+    if (!asset) {
+      throw new NotFoundException(`Asset ${dto.assetId} not found`);
+    }
+    if (dto.borrowerId !== asset.ownerId) {
+      throw new BadRequestException('Borrower is not the owner of the asset');
+    }
+    if (asset.status !== AssetStatus.OfferIssued) {
+      throw new BadRequestException(`Asset status must be OFFER_ISSUED, currently ${asset.status}`);
+    }
+
+    const latestAppraisal = await this.repository.findLatestAppraisalByAssetId(dto.assetId);
+    if (!latestAppraisal) {
+      throw new BadRequestException('No appraisal found for this asset');
+    }
+    const maxPrincipal = latestAppraisal.estimatedValue * (latestAppraisal.ltvBps / 10000);
+    if (dto.principal > maxPrincipal) {
+      throw new BadRequestException(`Principal ${dto.principal} exceeds the maximum LTV of ${maxPrincipal}`);
+    }
+
+    const dashboard = await this.repository.getDashboard();
+    const existingLoan = dashboard.loans.find(
+      (l) => l.assetId === dto.assetId && (l.status === LoanStatus.Offered || l.status === LoanStatus.Active)
+    );
+    if (existingLoan) {
+      throw new BadRequestException(`An offered or active loan already exists for this asset (status: ${existingLoan.status})`);
+    }
+
     const loan = await this.repository.saveLoan({
       id: randomUUID(),
       assetId: dto.assetId,
@@ -259,11 +380,22 @@ export class PawnWorkflowService {
     return loan;
   }
 
-  async acceptLoan(loanId: string, dto: AcceptLoanDto, actor?: { id: string; role: UserRole }): Promise<Loan | WalletExecutionResponse> {
+  async acceptLoan(loanId: string, dto: AcceptLoanDto, actor?: { id: string; role: UserRole; wallet?: string }): Promise<Loan | WalletExecutionResponse> {
     const loan = await this.requireLoan(loanId);
+    if (loan.status !== LoanStatus.Offered) {
+      throw new BadRequestException(`Loan status must be OFFERED, currently ${loan.status}`);
+    }
     if (actor && actor.role === UserRole.Customer) {
       if (loan.borrowerId !== actor.id) {
         throw new ForbiddenException('Cannot accept a loan offer for another user');
+      }
+    }
+    if (actor) {
+      if (!actor.wallet) {
+        throw new BadRequestException('Actor wallet address is missing from session');
+      }
+      if (dto.borrowerWallet.toLowerCase() !== actor.wallet.toLowerCase()) {
+        throw new BadRequestException('borrowerWallet does not match actor wallet address');
       }
     }
     const config = this.blockchainGateway.getBlockchainConfig();
@@ -332,8 +464,8 @@ export class PawnWorkflowService {
       throw new BadRequestException('Loan is not in OFFERED status');
     }
     
-    // Invalidate the loan offer and revert asset back to RECEIVED
-    loan.status = LoanStatus.Defaulted;
+    // Customer-declined offers should not be treated as payment defaults.
+    loan.status = LoanStatus.Rejected;
     await this.repository.saveLoan(loan);
 
     const asset = await this.requireAsset(loan.assetId);
@@ -344,15 +476,27 @@ export class PawnWorkflowService {
     return loan;
   }
 
-  async recordRepayment(dto: RecordRepaymentDto, actor?: { id: string; role: UserRole }): Promise<Repayment> {
+  async recordRepayment(dto: RecordRepaymentDto, actor?: { id: string; role: UserRole; wallet?: string }): Promise<Repayment> {
     const loan = await this.requireLoan(dto.loanId);
+    if (loan.status !== LoanStatus.Active) {
+      throw new BadRequestException(`Repayment can only be recorded for ACTIVE loans, currently ${loan.status}`);
+    }
     if (actor && actor.role === UserRole.Customer) {
       if (loan.borrowerId !== actor.id) {
         throw new ForbiddenException('Cannot repay a loan for another user');
       }
     }
-    const borrowerWallet = await this.repository.findWalletByUserId(loan.borrowerId);
-    if (!borrowerWallet) {
+
+    const interest = (loan.principal * loan.aprBps * loan.durationDays) / 3650000;
+    const amountDue = loan.principal + interest;
+    if (dto.amount < amountDue) {
+      throw new BadRequestException(`Repayment amount must be at least the amount due (${amountDue})`);
+    }
+
+    const borrowerWalletAddress = (actor?.id === loan.borrowerId && actor?.wallet)
+      ? actor.wallet
+      : (await this.repository.findWalletByUserId(loan.borrowerId))?.address;
+    if (!borrowerWalletAddress) {
       throw new BadRequestException(`Borrower wallet not found for user ${loan.borrowerId}`);
     }
 
@@ -362,13 +506,17 @@ export class PawnWorkflowService {
         amount: dto.amount,
         txHash: dto.txHash,
         assetId: loan.assetId,
-        borrowerWallet: borrowerWallet.address
+        borrowerWallet: borrowerWalletAddress
       });
     } catch (err: any) {
       throw new BadRequestException(err.message);
     }
     loan.status = LoanStatus.Repaid;
     await this.repository.saveLoan(loan);
+
+    const asset = await this.requireAsset(loan.assetId);
+    asset.status = AssetStatus.Returning;
+    await this.repository.saveAsset(asset);
 
     const repayment = await this.repository.saveRepayment({
       id: randomUUID(),
@@ -381,7 +529,7 @@ export class PawnWorkflowService {
     return repayment;
   }
 
-  async createListing(dto: CreateListingDto, actor?: { id: string; role: UserRole }): Promise<Listing | WalletExecutionResponse> {
+  async createListing(dto: CreateListingDto, actor?: { id: string; role: UserRole; wallet?: string }): Promise<Listing | WalletExecutionResponse> {
     const config = this.blockchainGateway.getBlockchainConfig();
     const isAnvil = config.mode === 'anvil';
     if (isAnvil && dto.isProtocolOwned) {
@@ -413,7 +561,9 @@ export class PawnWorkflowService {
     }
 
     const listings = await this.repository.listListings();
-    const duplicate = listings.find((l) => l.assetId === dto.assetId && l.status === ListingStatus.Active);
+    const duplicate = listings.find(
+      (l) => l.assetId === dto.assetId && (l.status === ListingStatus.Active || l.status === ListingStatus.Reserved)
+    );
     if (duplicate) {
       throw new ConflictException('Active listing already exists for this asset');
     }
@@ -435,15 +585,17 @@ export class PawnWorkflowService {
     }
 
     if (isAnvil) {
-      const sellerWallet = await this.repository.findWalletByUserId(dto.sellerId);
-      if (!sellerWallet) {
+      const sellerWalletAddress = (actor?.id === dto.sellerId && actor?.wallet)
+        ? actor.wallet
+        : (await this.repository.findWalletByUserId(dto.sellerId))?.address;
+      if (!sellerWalletAddress) {
         throw new BadRequestException(`No wallet found for seller ${dto.sellerId}`);
       }
 
       if (!dto.txHash) {
         const result = await this.blockchainGateway.prepareCreateListing({
           assetId: dto.assetId,
-          sellerWallet: sellerWallet.address,
+          sellerWallet: sellerWalletAddress,
           price: dto.price,
           isConsigned: true
         });
@@ -454,7 +606,7 @@ export class PawnWorkflowService {
         await this.blockchainGateway.verifyListingCreated(
           dto.txHash,
           dto.assetId,
-          sellerWallet.address,
+          sellerWalletAddress,
           dto.price
         );
       } catch (err: any) {
@@ -491,7 +643,7 @@ export class PawnWorkflowService {
     return this.repository.listListings();
   }
 
-  async createLayaway(dto: CreateLayawayDto, actor?: { id: string; role: UserRole }): Promise<Layaway | WalletExecutionResponse> {
+  async createLayaway(dto: CreateLayawayDto, actor?: { id: string; role: UserRole; wallet?: string }): Promise<Layaway | WalletExecutionResponse> {
     if (actor && actor.role === UserRole.Customer) {
       dto.buyerId = actor.id;
     }
@@ -535,15 +687,17 @@ export class PawnWorkflowService {
     const isAnvil = config.mode === 'anvil';
 
     if (isAnvil) {
-      const buyerWallet = await this.repository.findWalletByUserId(buyerId);
-      if (!buyerWallet) {
+      const buyerWalletAddress = (actor?.id === buyerId && actor?.wallet)
+        ? actor.wallet
+        : (await this.repository.findWalletByUserId(buyerId))?.address;
+      if (!buyerWalletAddress) {
         throw new BadRequestException(`No wallet found for buyer ${buyerId}`);
       }
 
       if (!dto.txHash) {
         const result = await this.blockchainGateway.prepareStartLayaway({
           assetId: listing.assetId,
-          buyerWallet: buyerWallet.address,
+          buyerWallet: buyerWalletAddress,
           downPayment: dto.downPayment,
           monthsDuration: dto.monthsDuration
         });
@@ -554,7 +708,7 @@ export class PawnWorkflowService {
         await this.blockchainGateway.verifyLayawayStarted(
           dto.txHash,
           listing.assetId,
-          buyerWallet.address,
+          buyerWalletAddress,
           dto.downPayment
         );
       } catch (err: any) {
@@ -597,7 +751,7 @@ export class PawnWorkflowService {
     return layaway;
   }
 
-  async payLayaway(layawayId: string, dto: PayLayawayDto, actor?: { id: string; role: UserRole }): Promise<Layaway | LayawayWalletExecutionResponse> {
+  async payLayaway(layawayId: string, dto: PayLayawayDto, actor?: { id: string; role: UserRole; wallet?: string }): Promise<Layaway | LayawayWalletExecutionResponse> {
     const layaway = await this.repository.findLayaway(layawayId);
     if (!layaway) throw new NotFoundException('Layaway not found');
     if (actor && actor.role === UserRole.Customer) {
@@ -621,8 +775,10 @@ export class PawnWorkflowService {
       const asset = await this.requireAsset(listing.assetId);
 
       // Find buyer wallet
-      const buyerWallet = await this.repository.findWalletByUserId(layaway.buyerId);
-      if (!buyerWallet) {
+      const buyerWalletAddress = (actor?.id === layaway.buyerId && actor?.wallet)
+        ? actor.wallet
+        : (await this.repository.findWalletByUserId(layaway.buyerId))?.address;
+      if (!buyerWalletAddress) {
         throw new BadRequestException(`No wallet found for buyer ${layaway.buyerId}`);
       }
 
@@ -654,7 +810,7 @@ export class PawnWorkflowService {
         // Phase 1: Prepare wallet actions
         const result = await this.blockchainGateway.preparePayLayawayInstallment({
           assetId: asset.id,
-          buyerWallet: buyerWallet.address,
+          buyerWallet: buyerWalletAddress,
           installmentAmount: requiredAmountWei
         });
         return {
@@ -669,7 +825,7 @@ export class PawnWorkflowService {
         await this.blockchainGateway.verifyLayawayInstallmentPaid({
           txHash: dto.txHash,
           assetId: asset.id,
-          buyerWallet: buyerWallet.address,
+          buyerWallet: buyerWalletAddress,
           installmentAmount: requiredAmountWei,
           isFinal
         });
@@ -756,7 +912,17 @@ export class PawnWorkflowService {
         throw new ForbiddenException('Cannot open a dispute for another user\'s asset');
       }
     }
+
+    const dashboard = await this.repository.getDashboard();
+    const existingDispute = dashboard.disputes.find(
+      (d) => d.assetId === dto.assetId && d.status === DisputeStatus.Open
+    );
+    if (existingDispute) {
+      throw new ConflictException('An open dispute already exists for this asset');
+    }
+
     const openedBy = dto.openedBy || 'system';
+    const previousStatus = asset.status;
     asset.status = AssetStatus.Disputed;
     await this.repository.saveAsset(asset);
 
@@ -766,7 +932,8 @@ export class PawnWorkflowService {
       openedBy,
       status: DisputeStatus.Open,
       evidenceExportUri: dto.evidenceExportUri,
-      createdAt: new Date()
+      createdAt: new Date(),
+      previousAssetStatus: previousStatus
     });
     await this.audit(openedBy, 'DISPUTE_OPENED', 'Dispute', dispute.id, { assetId: dto.assetId });
     return dispute;
@@ -779,10 +946,9 @@ export class PawnWorkflowService {
     dispute.resolution = dto.resolution;
     await this.repository.saveDispute(dispute);
 
-    // Also update asset status back to RECEIVED so it can be listed/re-appraised
     const asset = await this.repository.findAsset(dispute.assetId);
     if (asset) {
-      asset.status = AssetStatus.Received;
+      asset.status = (dispute.previousAssetStatus as AssetStatus) || AssetStatus.Received;
       await this.repository.saveAsset(asset);
     }
 
@@ -871,7 +1037,7 @@ export class PawnWorkflowService {
     }
   }
 
-  async fractionalizeAsset(dto: FractionalizeAssetDto, actorId: string): Promise<FractionalAsset | WalletExecutionResponse> {
+  async fractionalizeAsset(dto: FractionalizeAssetDto, actor?: string | { id: string; role: UserRole; wallet?: string }): Promise<FractionalAsset | WalletExecutionResponse> {
     const config = this.blockchainGateway.getBlockchainConfig();
     const isAnvil = config.mode === 'anvil';
 
@@ -892,9 +1058,14 @@ export class PawnWorkflowService {
       throw new BadRequestException('Target price must be divisible by total shares');
     }
 
-    const wallet = await this.repository.findWalletByUserId(actorId);
-    const user = wallet ? await this.repository.findUserByWallet(wallet.address) : undefined;
-    const isAdmin = actorId === 'admin-1' || (user && user.role === 'ADMIN');
+    const actorObj = typeof actor === 'string' ? { id: actor, role: UserRole.Customer } : actor;
+    const actorId = actorObj?.id || 'system';
+    const ownerWalletAddress = (actorObj?.id === actorId && actorObj?.wallet)
+      ? actorObj.wallet
+      : (await this.repository.findWalletByUserId(actorId))?.address;
+
+    const user = ownerWalletAddress ? await this.repository.findUserByWallet(ownerWalletAddress) : undefined;
+    const isAdmin = actorId === 'admin-1' || (actorObj && actorObj.role === UserRole.Admin) || (user && user.role === 'ADMIN');
 
     if (!isAdmin && asset.ownerId !== actorId) {
       throw new ForbiddenException('Only asset owner or admin can fractionalize');
@@ -908,13 +1079,18 @@ export class PawnWorkflowService {
       throw new BadRequestException('Asset has an active loan');
     }
 
-    // Check for active listing/layaway
-    const activeListing = dashboard.listings.find(l => l.assetId === asset.id && l.status === ListingStatus.Active);
-    if (activeListing) {
-      const activeLayaway = dashboard.layaways.find(lay => lay.listingId === activeListing.id && lay.status === LayawayStatus.Active);
-      if (activeLayaway) {
-        throw new BadRequestException('Asset has an active layaway');
-      }
+    // Check for active/reserved listings
+    const assetListings = dashboard.listings.filter(l => l.assetId === asset.id);
+    const hasListing = assetListings.some(l => l.status === ListingStatus.Active || l.status === ListingStatus.Reserved);
+    if (hasListing) {
+      throw new BadRequestException('Asset has an active or reserved listing');
+    }
+
+    // Check for active layaway
+    const listingIds = assetListings.map(l => l.id);
+    const hasActiveLayaway = dashboard.layaways.some(lay => listingIds.includes(lay.listingId) && lay.status === LayawayStatus.Active);
+    if (hasActiveLayaway) {
+      throw new BadRequestException('Asset has an active layaway');
     }
 
     // Check for active dispute
@@ -924,15 +1100,14 @@ export class PawnWorkflowService {
     }
 
     if (isAnvil) {
-      const ownerWallet = await this.repository.findWalletByUserId(actorId);
-      if (!ownerWallet) {
+      if (!ownerWalletAddress) {
         throw new BadRequestException(`No wallet found for owner ${actorId}`);
       }
 
       if (!dto.txHash) {
         const result = await this.blockchainGateway.prepareFractionalizeAsset({
           assetId: dto.assetId,
-          ownerWallet: ownerWallet.address,
+          ownerWallet: ownerWalletAddress,
           totalShares: dto.totalShares,
           targetPrice: dto.targetPrice
         });
@@ -943,7 +1118,7 @@ export class PawnWorkflowService {
         await this.blockchainGateway.verifyAssetFractionalized({
           txHash: dto.txHash,
           assetId: dto.assetId,
-          ownerWallet: ownerWallet.address,
+          ownerWallet: ownerWalletAddress,
           totalShares: dto.totalShares,
           targetPrice: dto.targetPrice
         });
@@ -985,16 +1160,20 @@ export class PawnWorkflowService {
     return fractionalAsset;
   }
 
-  async buyFractions(dto: BuyFractionsDto, buyerId: string): Promise<FractionalAsset | WalletExecutionResponse> {
+  async buyFractions(dto: BuyFractionsDto, actor?: string | { id: string; role: UserRole; wallet?: string }): Promise<FractionalAsset | WalletExecutionResponse> {
     const config = this.blockchainGateway.getBlockchainConfig();
     const isAnvil = config.mode === 'anvil';
 
-    const buyerWallet = await this.repository.findWalletByUserId(buyerId);
-    if (!buyerWallet) {
+    const actorObj = typeof actor === 'string' ? { id: actor, role: UserRole.Customer } : actor;
+    const buyerId = actorObj?.id || 'system';
+    const buyerWalletAddress = (actorObj?.id === buyerId && actorObj?.wallet)
+      ? actorObj.wallet
+      : (await this.repository.findWalletByUserId(buyerId))?.address;
+    if (!buyerWalletAddress) {
       throw new BadRequestException(`No wallet found for buyer ${buyerId}`);
     }
 
-    const buyerUser = await this.repository.findUserByWallet(buyerWallet.address);
+    const buyerUser = await this.repository.findUserByWallet(buyerWalletAddress);
     if (!buyerUser || buyerUser.kycStatus !== 'VERIFIED') {
       throw new ForbiddenException('KYC verification required to buy fractions');
     }
@@ -1020,7 +1199,7 @@ export class PawnWorkflowService {
       if (!dto.txHash) {
         const result = await this.blockchainGateway.prepareBuyFractions({
           assetId: dto.assetId,
-          buyerWallet: buyerWallet.address,
+          buyerWallet: buyerWalletAddress,
           sharesToBuy: dto.sharesToBuy,
           pricePerShare: fracAsset.pricePerShare
         });
@@ -1031,7 +1210,7 @@ export class PawnWorkflowService {
         await this.blockchainGateway.verifyFractionsPurchased({
           txHash: dto.txHash,
           assetId: dto.assetId,
-          buyerWallet: buyerWallet.address,
+          buyerWallet: buyerWalletAddress,
           sharesToBuy: dto.sharesToBuy,
           pricePerShare: fracAsset.pricePerShare
         });
@@ -1069,10 +1248,12 @@ export class PawnWorkflowService {
     return fracAsset;
   }
 
-  async redeemAsset(dto: RedeemAssetDto, redeemerId: string): Promise<FractionalAsset | WalletExecutionResponse> {
+  async redeemAsset(dto: RedeemAssetDto, actor?: string | { id: string; role: UserRole; wallet?: string }): Promise<FractionalAsset | WalletExecutionResponse> {
     const config = this.blockchainGateway.getBlockchainConfig();
     const isAnvil = config.mode === 'anvil';
 
+    const actorObj = typeof actor === 'string' ? { id: actor, role: UserRole.Customer } : actor;
+    const redeemerId = actorObj?.id || 'system';
     const fracAsset = await this.repository.findFractionalAsset(dto.assetId);
     if (!fracAsset) {
       throw new NotFoundException('Fractional asset not found');
@@ -1088,15 +1269,17 @@ export class PawnWorkflowService {
     }
 
     if (isAnvil) {
-      const redeemerWallet = await this.repository.findWalletByUserId(redeemerId);
-      if (!redeemerWallet) {
+      const redeemerWalletAddress = (actorObj?.id === redeemerId && actorObj?.wallet)
+        ? actorObj.wallet
+        : (await this.repository.findWalletByUserId(redeemerId))?.address;
+      if (!redeemerWalletAddress) {
         throw new BadRequestException(`No wallet found for redeemer ${redeemerId}`);
       }
 
       if (!dto.txHash) {
         const result = await this.blockchainGateway.prepareRedeemAsset({
           assetId: dto.assetId,
-          redeemerWallet: redeemerWallet.address
+          redeemerWallet: redeemerWalletAddress
         });
         return this.requireWalletExecution(result);
       }
@@ -1105,7 +1288,7 @@ export class PawnWorkflowService {
         await this.blockchainGateway.verifyAssetRedeemed({
           txHash: dto.txHash,
           assetId: dto.assetId,
-          redeemerWallet: redeemerWallet.address
+          redeemerWallet: redeemerWalletAddress
         });
       } catch (err: any) {
         throw new BadRequestException(`Failed to verify redemption on-chain: ${err.message}`);

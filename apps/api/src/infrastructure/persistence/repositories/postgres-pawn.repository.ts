@@ -546,16 +546,29 @@ export class PostgresPawnRepository implements PawnRepository, OnApplicationShut
     return shipment;
   }
 
-  async findShipment(assetId: string): Promise<Shipment | undefined> {
-    const shipment = await this.dataSource.getRepository(ShipmentEntity).findOne({
-      where: { assetId }
+  async findShipment(assetId: string, direction?: ShipmentDirection): Promise<Shipment | undefined> {
+    const where: any = { assetId };
+    if (direction) {
+      where.direction = direction;
+    }
+    const shipments = await this.dataSource.getRepository(ShipmentEntity).find({
+      where,
+      order: { updatedAt: 'DESC' }
     });
-    return shipment || undefined;
+    return shipments[0] || undefined;
   }
 
   async saveAppraisal(appraisal: Appraisal): Promise<Appraisal> {
     await this.dataSource.getRepository(AppraisalEntity).save(appraisal);
     return appraisal;
+  }
+
+  async findLatestAppraisalByAssetId(assetId: string): Promise<Appraisal | undefined> {
+    const appraisal = await this.dataSource.getRepository(AppraisalEntity).findOne({
+      where: { assetId },
+      order: { createdAt: 'DESC' }
+    });
+    return appraisal || undefined;
   }
 
   async saveLoan(loan: Loan): Promise<Loan> {
@@ -641,6 +654,17 @@ export class PostgresPawnRepository implements PawnRepository, OnApplicationShut
       where: { userId }
     });
     return wallet || undefined;
+  }
+
+  async findWalletByAddress(address: string): Promise<Wallet | undefined> {
+    const wallet = await this.dataSource.getRepository(WalletEntity).findOne({
+      where: { address }
+    });
+    return wallet || undefined;
+  }
+
+  async deleteWallet(id: string): Promise<void> {
+    await this.dataSource.getRepository(WalletEntity).delete(id);
   }
 
   async saveFractionalAsset(asset: FractionalAsset): Promise<FractionalAsset> {

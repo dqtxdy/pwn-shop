@@ -9,11 +9,13 @@ import { UserRole } from '../src/domain/enums';
 // The new demoLogin contract: walletAddress is passed IN from the frontend
 // (it is the MetaMask address currently connected in the browser).
 // The backend echoes back whatever address was provided (or undefined if none).
-// Two accounts can share the same wallet; no wallet is locked to any account.
+// The demoLogin receives the wallet from the frontend, persists/upserts it for
+// the current user, and rejects if the wallet is already owned by another user.
 
 describe('AuthService', () => {
   describe('demoLogin - Mock Mode', () => {
     let service: AuthService;
+    let repository: InMemoryPawnRepository;
     let originalBlockchainMode: string | undefined;
 
     beforeEach(async () => {
@@ -34,6 +36,7 @@ describe('AuthService', () => {
       }).compile();
 
       service = moduleRef.get(AuthService);
+      repository = moduleRef.get<InMemoryPawnRepository>(PAWN_REPOSITORY);
     });
 
     afterEach(() => {
@@ -69,13 +72,22 @@ describe('AuthService', () => {
       expect(session.walletAddress).toBeUndefined();
     });
 
-    it('allows customer-1 and customer-2 to share the same wallet address', async () => {
+    it('rejects demoLogin if the wallet address is already linked to another user', async () => {
       const sharedWallet = '0x1234567890abcdef1234567890abcdef12345678';
-      const s1 = await service.demoLogin(UserRole.Customer, 'customer-1', undefined, sharedWallet);
-      const s2 = await service.demoLogin(UserRole.Customer, 'customer-2', undefined, sharedWallet);
-      expect(s1.walletAddress).toBe(sharedWallet.toLowerCase());
-      expect(s2.walletAddress).toBe(sharedWallet.toLowerCase());
-      expect(s1.userId).not.toBe(s2.userId);
+      await service.demoLogin(UserRole.Customer, 'customer-1', undefined, sharedWallet);
+
+      await expect(
+        service.demoLogin(UserRole.Customer, 'customer-2', undefined, sharedWallet)
+      ).rejects.toThrow('is already linked to another user');
+    });
+
+    it('persists/upserts the wallet address in the repository on demoLogin', async () => {
+      const testWallet = '0x9999999999999999999999999999999999999999';
+      await service.demoLogin(UserRole.Customer, 'customer-1', undefined, testWallet);
+
+      const persistedWallet = await repository.findWalletByUserId('customer-1');
+      expect(persistedWallet).toBeDefined();
+      expect(persistedWallet!.address).toBe(testWallet);
     });
 
     it('returns staff session for STAFF role without wallet', async () => {
