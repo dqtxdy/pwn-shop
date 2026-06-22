@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="60" height="103.923" viewBox="0 0 60 103.923">
+  <g fill="none" stroke="#e8dcc9" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+    <!-- Positive slope diagonals (+30 deg) -->
+    <path d="M30,0 L60,17.32" />
+    <path d="M0,17.32 L60,51.96" />
+    <path d="M0,51.96 L60,86.60" />
+    <path d="M0,86.60 L30,103.923" />
+
+    <!-- Negative slope diagonals (-30 deg) -->
+    <path d="M30,0 L0,17.32" />
+    <path d="M60,17.32 L0,51.96" />
+    <path d="M60,51.96 L0,86.60" />
+    <path d="M60,86.60 L30,103.923" />
+
+    <!-- Vertical lines -->
+    <path d="M30,34.64 L30,103.923" />
+    <path d="M0,0 L0,51.96" />
+    <path d="M0,86.60 L0,103.923" />
+    <path d="M60,0 L60,51.96" />
+    <path d="M60,86.60 L60,103.923" />
+  </g>
+</svg>

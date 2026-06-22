@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import logoSrc from './assets/logo.jpg';
 import { useState, useEffect } from 'react';
 
 // Cloudscape Design System Components
@@ -101,7 +102,7 @@ type NotificationItem = {
 };
 
 const CONNECT_WALLET_MESSAGE = 'Connect MetaMask first.';
-const WALLET_MISMATCH_MESSAGE = 'Switch MetaMask to the active demo wallet.';
+const WALLET_MISMATCH_MESSAGE = 'Switch MetaMask to the active workspace wallet.';
 const WALLET_CLIENT_MESSAGE = 'Wallet client is not ready.';
 const SERVER_CONFIRMATION_MESSAGE = 'Confirming with server.';
 const txSubmittedMessage = (label: string, txHash: string) =>
@@ -1665,14 +1666,13 @@ export default function App({ walletButton }: AppProps) {
             <SpaceBetween size="l">
               <Container className="quickstart-panel">
                 <div className="quickstart-panel__content">
-                  <div className="quickstart-panel__visual">
-                    <div className="quickstart-vault-icon"></div>
-                  </div>
                   <div className="quickstart-panel__text">
                     <Box variant="h2" padding={{ bottom: 'xxs' }}>Start a pawn-backed loan</Box>
-                    <Box variant="p" color="text-body-secondary">
-                      Submit an asset, ship it to the vault, review the appraisal, and accept the loan offer.
-                    </Box>
+                    <div style={{ maxWidth: '640px' }}>
+                      <Box variant="p" color="text-body-secondary">
+                        Submit an asset, ship it to the vault, review the appraisal, and accept the loan offer.
+                      </Box>
+                    </div>
                     <div className="quickstart-panel__actions">
                       <SpaceBetween direction="horizontal" size="xs">
                         <Button variant="primary" onClick={() => setActiveHref('#new-pawn')}>
@@ -2362,6 +2362,15 @@ export default function App({ walletButton }: AppProps) {
 
           return (
             <SpaceBetween size="l">
+              <div className="workspace-visual-band workspace-visual-band--validation">
+                <div className="workspace-visual-band__text">
+                  <Box variant="h2" padding={{ bottom: 'xxs' }}>Asset Verification & Appraisal Console</Box>
+                  <Box variant="p" color="text-body-secondary">
+                    Review unboxing evidence, update appraisal values, and issue pawn-backed loan offers.
+                  </Box>
+                </div>
+              </div>
+
               <div className="overview-band">
                 <div className="metric-tile">
                   <Box variant="awsui-key-label">Ready for appraisal</Box>
@@ -2825,6 +2834,15 @@ export default function App({ walletButton }: AppProps) {
 
           return (
             <SpaceBetween size="l">
+              <div className="workspace-visual-band workspace-visual-band--admin">
+                <div className="workspace-visual-band__text">
+                  <Box variant="h2" padding={{ bottom: 'xxs' }}>System Administration & Audit Control</Box>
+                  <Box variant="p" color="text-body-secondary">
+                    Monitor system metrics, review audit logs, and configure global risk parameters.
+                  </Box>
+                </div>
+              </div>
+
               <Cards
                 variant="container"
                 cardDefinition={{
@@ -3204,7 +3222,7 @@ export default function App({ walletButton }: AppProps) {
                     <div className="summary-grid summary-grid--single">
                       <div className="summary-item">
                         <Box variant="awsui-key-label">Treasury Manager</Box>
-                        <Box variant="p">PawnShop Protocol MultiSig</Box>
+                        <Box variant="p">DeepLakers PawnShop MultiSig</Box>
                       </div>
                       <div className="summary-item">
                         <Box variant="awsui-key-label">Liquidity Health</Box>
@@ -3284,20 +3302,17 @@ export default function App({ walletButton }: AppProps) {
   };
 
   const workspaceBreadcrumbItems = [
-    { text: 'PawnShop Protocol', href: '#' },
+    { text: 'DeepLakers PawnShop', href: '#' },
     { text: 'Workspace', href: '#' }
   ];
 
   if (!session) {
     return (
       <div className="login-shell">
-        <div className="login-shell__decor login-shell__decor--left" aria-hidden="true" />
-        <div className="login-shell__decor login-shell__decor--right" aria-hidden="true" />
-
         <div className="login-topbar">
-          <div className="login-brand" aria-label="PawnShop Protocol">
-            <div className="login-brand__mark">P</div>
-            <div className="login-brand__text">PawnShop Protocol</div>
+          <div className="login-brand" aria-label="DeepLakers PawnShop">
+            <img src={logoSrc} alt="DeepLakers PawnShop Logo" className="login-brand__logo-img" />
+            <div className="login-brand__text">DeepLakers PawnShop</div>
           </div>
           <div className="login-topbar__meta">Secure workspace access</div>
         </div>
@@ -3306,7 +3321,7 @@ export default function App({ walletButton }: AppProps) {
           <section className="login-card">
             <div className="login-card__header">
               <div className="login-card__eyebrow">Workspace access</div>
-              <h1>PawnShop Protocol sign in</h1>
+              <h1>DeepLakers PawnShop sign in</h1>
               <p>Use your workspace account to manage custody, marketplace, and wallet actions.</p>
             </div>
 
@@ -3343,7 +3358,7 @@ export default function App({ walletButton }: AppProps) {
                 <input
                   value={accountId}
                   onChange={(event) => setAccountId(event.target.value)}
-                  placeholder="pawnshop-protocol"
+                  placeholder="deeplakers-pawnshop"
                 />
               </label>
 
@@ -3361,7 +3376,7 @@ export default function App({ walletButton }: AppProps) {
                 <input
                   value={loginUsername}
                   onChange={(event) => setLoginUsername(event.target.value)}
-                  placeholder="customer-1"
+                  placeholder={loginRole === 'ADMIN' ? 'admin-1' : loginRole === 'STAFF' ? 'staff-1' : 'customer-1'}
                 />
               </label>
 
@@ -3431,6 +3446,7 @@ export default function App({ walletButton }: AppProps) {
   return (
     <div className="app-shell">
       <div className="workspace-shell">
+        <div className="workspace-art" aria-hidden="true" />
         <AppLayout
           navigationOpen={navigationOpen}
           onNavigationChange={({ detail }) => setNavigationOpen(detail.open)}
@@ -3448,6 +3464,9 @@ export default function App({ walletButton }: AppProps) {
                 items={sideNavItems()}
               />
               <div className="sidebar-footer">
+                <div className="sidebar-logo-mark">
+                  <img src={logoSrc} alt="DeepLakers PawnShop" className="sidebar-logo-img" />
+                </div>
                 <div className="sidebar-session-card">
                   <span className="sidebar-session-card__label">Signed in as</span>
                   <strong>{session.displayName}</strong>
@@ -3485,7 +3504,7 @@ export default function App({ walletButton }: AppProps) {
                       </div>
                     }
                   >
-                    Physical Asset Pawnshop Operations
+                    DeepLakers PawnShop Operations
                   </Header>
                 </SpaceBetween>
               }

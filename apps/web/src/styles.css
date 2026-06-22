@@ -9,6 +9,7 @@
   --aws-orange: #ff9900;
   --aws-orange-hover: #ec8b00;
   --aws-blue: #0972d3;
+  --border-radius-button: 999px;
 }
 
 html,
@@ -36,6 +37,108 @@ body {
   background: var(--surface-muted);
   position: relative;
   min-height: 100vh;
+  overflow-x: hidden;
+}
+
+.workspace-art {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  overflow: hidden;
+}
+
+.workspace-art::before,
+.workspace-art::after {
+  content: '';
+  position: absolute;
+  pointer-events: none;
+  background-image: url('./assets/login-cube-pattern.svg');
+  background-repeat: repeat;
+  background-size: 240px 240px;
+  opacity: 0.22;
+  filter: sepia(0.22) saturate(0.9);
+}
+
+.workspace-art::before {
+  left: -120px;
+  bottom: -80px;
+  width: min(44vw, 680px);
+  height: min(52vw, 780px);
+  -webkit-mask-image: linear-gradient(to top, #000 70%, transparent 100%);
+  mask-image: linear-gradient(to top, #000 70%, transparent 100%);
+}
+
+.workspace-art::after {
+  right: -140px;
+  bottom: -90px;
+  width: min(42vw, 660px);
+  height: min(50vw, 740px);
+  opacity: 0.18;
+  -webkit-mask-image: linear-gradient(to top, #000 68%, transparent 100%);
+  mask-image: linear-gradient(to top, #000 68%, transparent 100%);
+}
+
+/* Ensure layout background allows fixed workspace-art to show through */
+main, 
+[class*="awsui_app-layout_"] {
+  background-color: transparent !important;
+}
+
+/* Quickstart visual band enhancements */
+.quickstart-panel {
+  position: relative;
+  overflow: hidden;
+  background-color: #f4f6f8 !important;
+  border: 1px solid #d5dbdb !important;
+  border-radius: 4px !important;
+}
+
+.quickstart-panel::after,
+.workspace-visual-band::after {
+  content: '';
+  position: absolute;
+  pointer-events: none;
+  background-image: url('./assets/login-cube-pattern.svg');
+  background-repeat: repeat;
+  background-size: 180px 180px;
+  opacity: 0.18;
+  filter: sepia(0.18) saturate(0.85);
+}
+
+.quickstart-panel::after {
+  top: 50%;
+  transform: translateY(-50%);
+  right: 24px;
+  width: min(30%, 320px);
+  height: 120%;
+}
+
+/* Staff & Admin visual headers */
+.workspace-visual-band {
+  position: relative;
+  overflow: hidden;
+  background-color: #f4f6f8;
+  border: 1px solid #d5dbdb;
+  border-radius: 4px;
+  padding: 16px 20px;
+  display: flex;
+  align-items: center;
+  min-height: 70px;
+  box-sizing: border-box;
+}
+
+.workspace-visual-band::after {
+  right: 24px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: min(36%, 360px);
+  height: 150%;
+}
+
+.workspace-visual-band__text {
+  flex: 1;
+  max-width: 60%;
 }
 
 .content-shell {
@@ -47,9 +150,7 @@ body {
   overflow: hidden;
   min-height: 100vh;
   padding: 24px 28px 40px;
-  background:
-    linear-gradient(180deg, #ffffff 0%, #fcfcfc 100%),
-    #ffffff;
+  background: #ffffff;
   box-sizing: border-box;
 }
 
@@ -57,53 +158,29 @@ body {
 .login-shell::after {
   content: '';
   position: absolute;
-  inset: auto;
+  z-index: 0;
   pointer-events: none;
-  opacity: 0.28;
+  background-image: url('./assets/login-cube-pattern.svg');
+  background-repeat: repeat;
+  background-size: 260px 260px;
+  opacity: 0.48;
+  filter: sepia(0.22) saturate(0.9);
+  -webkit-mask-image: linear-gradient(to top, #000 70%, transparent 100%);
+  mask-image: linear-gradient(to top, #000 70%, transparent 100%);
 }
 
 .login-shell::before {
-  left: -40px;
-  bottom: 18px;
-  width: 270px;
-  height: 150px;
-  background:
-    linear-gradient(135deg, transparent 0 44%, rgba(9, 114, 211, 0.09) 44% 46%, transparent 46% 100%),
-    linear-gradient(45deg, transparent 0 43%, rgba(255, 153, 0, 0.08) 43% 45%, transparent 45% 100%),
-    linear-gradient(90deg, transparent 0 32%, rgba(22, 25, 31, 0.05) 32% 34%, transparent 34% 100%);
-  clip-path: polygon(0 84%, 24% 74%, 43% 57%, 58% 61%, 78% 38%, 100% 46%, 100% 100%, 0 100%);
+  left: -70px;
+  bottom: -40px;
+  width: 560px;
+  height: 680px;
 }
 
 .login-shell::after {
-  right: -60px;
-  bottom: 24px;
-  width: 300px;
-  height: 170px;
-  background:
-    linear-gradient(135deg, transparent 0 48%, rgba(9, 114, 211, 0.08) 48% 50%, transparent 50% 100%),
-    linear-gradient(45deg, transparent 0 45%, rgba(255, 153, 0, 0.06) 45% 47%, transparent 47% 100%),
-    linear-gradient(90deg, transparent 0 35%, rgba(22, 25, 31, 0.04) 35% 37%, transparent 37% 100%);
-  clip-path: polygon(0 100%, 0 46%, 22% 38%, 39% 52%, 58% 29%, 76% 43%, 100% 34%, 100% 100%);
-}
-
-.login-shell__decor {
-  position: absolute;
-  width: 180px;
-  height: 180px;
-  border-radius: 24px;
-  background: radial-gradient(circle, rgba(9, 114, 211, 0.05), transparent 70%);
-  filter: blur(2px);
-  pointer-events: none;
-}
-
-.login-shell__decor--left {
-  top: 92px;
-  left: -40px;
-}
-
-.login-shell__decor--right {
-  top: 150px;
-  right: -50px;
+  right: -80px;
+  bottom: -40px;
+  width: 600px;
+  height: 700px;
 }
 
 .login-topbar {
@@ -123,17 +200,13 @@ body {
   gap: 12px;
 }
 
-.login-brand__mark {
-  width: 28px;
-  height: 28px;
-  border-radius: 6px;
-  background: #16191f;
-  color: #ff9900;
-  font-size: 16px;
-  font-weight: 800;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+.login-brand__logo-img {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  object-fit: cover;
+  display: block;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.15);
 }
 
 .login-brand__text {
@@ -162,6 +235,8 @@ body {
 }
 
 .login-card {
+  position: relative;
+  z-index: 1;
   max-width: 374px;
   padding: 26px 24px 24px;
   border: 1px solid var(--border);
@@ -394,6 +469,8 @@ body {
 }
 
 .login-promo {
+  position: relative;
+  z-index: 1;
   align-self: stretch;
   display: flex;
   align-items: center;
@@ -557,6 +634,22 @@ body {
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.06em;
+}
+
+.sidebar-logo-mark {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 0 8px;
+}
+
+.sidebar-logo-img {
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  object-fit: cover;
+  display: block;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.18);
 }
 
 .content-header-actions {
@@ -929,8 +1022,23 @@ body {
   }
 
   .login-shell::before,
-  .login-shell::after,
-  .login-shell__decor {
+  .login-shell::after {
+    opacity: 0.16;
+    width: 260px;
+    height: 320px;
+    background-size: 220px 220px;
+  }
+
+  .login-shell::after {
+    display: none;
+  }
+
+  .workspace-art {
+    display: none;
+  }
+
+  .quickstart-panel::after,
+  .workspace-visual-band::after {
     display: none;
   }
 
@@ -985,12 +1093,7 @@ body {
   white-space: nowrap !important;
 }
 
-/* Quickstart Panel styles */
-.quickstart-panel {
-  background-color: #f4f6f8 !important;
-  border: 1px solid #d5dbdb !important;
-  border-radius: 4px !important;
-}
+
 
 .quickstart-panel__content {
   display: flex;
@@ -1007,44 +1110,6 @@ body {
   display: flex;
   gap: 12px;
   margin-top: 16px;
-}
-
-.quickstart-panel__visual {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin-top: 4px;
-}
-
-.quickstart-vault-icon {
-  width: 44px;
-  height: 44px;
-  border: 2px solid #0972d3;
-  border-radius: 6px;
-  position: relative;
-  background: rgba(9, 114, 211, 0.08);
-}
-
-.quickstart-vault-icon::before {
-  content: '';
-  position: absolute;
-  top: 6px;
-  left: 6px;
-  width: 28px;
-  height: 28px;
-  border: 2px dashed #0972d3;
-  border-radius: 50%;
-}
-
-.quickstart-vault-icon::after {
-  content: '';
-  position: absolute;
-  top: 18px;
-  left: 18px;
-  width: 8px;
-  height: 8px;
-  background: #0972d3;
-  border-radius: 50%;
 }
 
 /* Metric tile heights and secondary text styles */
@@ -1103,3 +1168,9 @@ body {
     grid-template-columns: 1fr;
   }
 }
+
+/* Custom Cloudscape button pill-style overrides */
+[class*="awsui_button_"] {
+  border-radius: 999px !important;
+}
+

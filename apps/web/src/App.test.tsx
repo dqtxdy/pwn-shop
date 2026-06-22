@@ -84,7 +84,7 @@ const renderAndSignIn = async () => {
   render(<App walletButton={<button type="button">Connect Wallet</button>} />);
 
   await waitFor(() => {
-    expect(screen.getByText('PawnShop Protocol sign in')).toBeInTheDocument();
+    expect(screen.getByText('DeepLakers PawnShop sign in')).toBeInTheDocument();
   });
 
   fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
@@ -165,13 +165,13 @@ describe('App', () => {
 
   it('shows the login page first and enters the customer workspace after sign in', async () => {
     render(<App walletButton={<button type="button">Connect Wallet</button>} />);
-    expect(screen.getByText('PawnShop Protocol sign in')).toBeInTheDocument();
-    expect(screen.queryByText('Physical Asset Pawnshop Operations')).not.toBeInTheDocument();
+    expect(screen.getByText('DeepLakers PawnShop sign in')).toBeInTheDocument();
+    expect(screen.queryByText('DeepLakers PawnShop Operations')).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
 
     await waitFor(() => {
-      expect(screen.getByText('Physical Asset Pawnshop Operations')).toBeInTheDocument();
+      expect(screen.getByText('DeepLakers PawnShop Operations')).toBeInTheDocument();
       expect(screen.getByText('Customer Workspace')).toBeInTheDocument();
     });
 
@@ -354,7 +354,7 @@ describe('App', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Sign out' }));
 
     await waitFor(() => {
-      expect(screen.getByText('PawnShop Protocol sign in')).toBeInTheDocument();
+      expect(screen.getByText('DeepLakers PawnShop sign in')).toBeInTheDocument();
     });
 
     expect(screen.queryByText('Customer Workspace')).not.toBeInTheDocument();
