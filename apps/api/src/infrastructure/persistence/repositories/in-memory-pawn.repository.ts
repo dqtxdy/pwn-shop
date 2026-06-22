@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import * as fs from 'fs';
 import * as path from 'path';
+import * as crypto from 'crypto';
 import {
   Appraisal,
   Asset,
@@ -328,6 +329,65 @@ export class InMemoryPawnRepository implements PawnRepository {
         if (tokenIdMap[id] !== undefined) {
           asset.tokenId = String(tokenIdMap[id]);
         }
+      }
+    }
+
+    // Seed Evidence Files
+    const getEvidenceData = (filename: string) => {
+      try {
+        const pathsToTry = [
+          path.resolve(process.cwd(), 'seed-images', filename),
+          path.resolve(process.cwd(), 'apps/api/seed-images', filename),
+          path.resolve(__dirname, '../../../../seed-images', filename),
+          path.resolve(__dirname, '../../../../../seed-images', filename),
+          path.resolve(__dirname, 'seed-images', filename),
+        ];
+        for (const p of pathsToTry) {
+          if (fs.existsSync(p)) {
+            const bytes = fs.readFileSync(p);
+            const base64 = bytes.toString('base64');
+            const hash = crypto.createHash('sha256').update(bytes).digest('hex');
+            return { uri: `data:image/png;base64,${base64}`, hash };
+          }
+        }
+      } catch (err) {
+        // ignore
+      }
+      return {
+        uri: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+        hash: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'
+      };
+    };
+
+    const seeds = [
+      { assetId: 'A-1001', file: 'gold_necklace.png', hasStaff: true },
+      { assetId: 'A-1002', file: 'macbook_pro.png', hasStaff: true },
+      { assetId: 'A-1003', file: 'rolex_watch.png', hasStaff: false },
+      { assetId: 'A-1004', file: 'gold_rings.png', hasStaff: true },
+      { assetId: 'A-1005', file: 'diamond_brooch.png', hasStaff: true },
+    ];
+
+    for (const s of seeds) {
+      const data = getEvidenceData(s.file);
+      this.evidence.set(`EV-C-${s.assetId}`, {
+        id: `EV-C-${s.assetId}`,
+        assetId: s.assetId,
+        uploadedBy: 'customer-1',
+        kind: EvidenceKind.CustomerPreShipment,
+        uri: data.uri,
+        contentHash: data.hash,
+        capturedAt: new Date(now.getTime() - 2.5 * 3600000)
+      });
+      if (s.hasStaff) {
+        this.evidence.set(`EV-S-${s.assetId}`, {
+          id: `EV-S-${s.assetId}`,
+          assetId: s.assetId,
+          uploadedBy: 'staff-1',
+          kind: EvidenceKind.StaffUnboxing,
+          uri: data.uri,
+          contentHash: data.hash,
+          capturedAt: new Date(now.getTime() - 1.1 * 3600000)
+        });
       }
     }
   }

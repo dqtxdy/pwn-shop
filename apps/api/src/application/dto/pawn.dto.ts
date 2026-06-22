@@ -222,6 +222,10 @@ export class DemoLoginDto {
   @IsOptional()
   @IsString()
   userId?: string;
+
+  @IsOptional()
+  @IsString()
+  password?: string;
 }
 
 export class FractionalizeAssetDto {

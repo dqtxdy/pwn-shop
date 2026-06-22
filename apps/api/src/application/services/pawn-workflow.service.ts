@@ -1,5 +1,7 @@
 import { Inject, Injectable, NotFoundException, BadRequestException, ConflictException, ForbiddenException } from '@nestjs/common';
 import { randomUUID } from 'crypto';
+import * as fs from 'fs';
+import * as path from 'path';
 import {
   BLOCKCHAIN_GATEWAY,
   KYC_PROVIDER,
@@ -317,6 +319,29 @@ export class PawnWorkflowService {
       await this.audit(loan.borrowerId, 'LOAN_ACCEPTED', 'Loan', loan.id, { txHash: dto.txHash });
       return loan;
     }
+  }
+
+  async rejectLoan(loanId: string, actor?: { id: string; role: UserRole }): Promise<Loan> {
+    const loan = await this.requireLoan(loanId);
+    if (actor && actor.role === UserRole.Customer) {
+      if (loan.borrowerId !== actor.id) {
+        throw new ForbiddenException('Cannot reject a loan offer for another user');
+      }
+    }
+    if (loan.status !== LoanStatus.Offered) {
+      throw new BadRequestException('Loan is not in OFFERED status');
+    }
+    
+    // Invalidate the loan offer and revert asset back to RECEIVED
+    loan.status = LoanStatus.Defaulted;
+    await this.repository.saveLoan(loan);
+
+    const asset = await this.requireAsset(loan.assetId);
+    asset.status = AssetStatus.Received;
+    await this.repository.saveAsset(asset);
+
+    await this.audit(loan.borrowerId, 'LOAN_REJECTED', 'Loan', loan.id, {});
+    return loan;
   }
 
   async recordRepayment(dto: RecordRepaymentDto, actor?: { id: string; role: UserRole }): Promise<Repayment> {
@@ -753,6 +778,14 @@ export class PawnWorkflowService {
     dispute.status = DisputeStatus.Resolved;
     dispute.resolution = dto.resolution;
     await this.repository.saveDispute(dispute);
+
+    // Also update asset status back to RECEIVED so it can be listed/re-appraised
+    const asset = await this.repository.findAsset(dispute.assetId);
+    if (asset) {
+      asset.status = AssetStatus.Received;
+      await this.repository.saveAsset(asset);
+    }
+
     await this.audit('admin', 'DISPUTE_RESOLVED', 'Dispute', id, { resolution: dto.resolution });
     return dispute;
   }
@@ -794,6 +827,42 @@ export class PawnWorkflowService {
       return assets.filter(asset => asset.ownerId === actor.id);
     }
     return assets;
+  }
+
+  async listEvidence(assetId: string, actor?: { id: string; role: UserRole }): Promise<EvidenceFile[]> {
+    const asset = await this.requireAsset(assetId);
+    if (actor && actor.role === UserRole.Customer) {
+      if (asset.ownerId !== actor.id) {
+        throw new ForbiddenException('Cannot view evidence for another user\'s asset');
+      }
+    }
+    const files = await this.repository.listEvidence(assetId);
+    // Resolve local-object:// URIs to data URLs so the browser can display them
+    const storageRoot = path.resolve(process.env.STORAGE_LOCAL_DIR ?? '.local-object-storage/evidence');
+    return files.map(ev => {
+      if (ev.uri && ev.uri.startsWith('local-object://')) {
+        const relativePath = ev.uri.replace('local-object://', '');
+        const fullPath = path.join(storageRoot, relativePath);
+        try {
+          const bytes = fs.readFileSync(fullPath);
+          const ext = path.extname(relativePath).toLowerCase();
+          const mimeMap: Record<string, string> = {
+            '.png': 'image/png',
+            '.jpg': 'image/jpeg',
+            '.jpeg': 'image/jpeg',
+            '.pdf': 'application/pdf',
+            '.mp4': 'video/mp4',
+            '.txt': 'text/plain'
+          };
+          const mime = mimeMap[ext] ?? 'application/octet-stream';
+          return { ...ev, uri: `data:${mime};base64,${bytes.toString('base64')}` };
+        } catch {
+          // If the file is missing, return the raw local-object URI
+          return ev;
+        }
+      }
+      return ev;
+    });
   }
 
   async reset(): Promise<void> {

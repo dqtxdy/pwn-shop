@@ -76,7 +76,7 @@ export class AuthService {
     return { accessToken, user };
   }
 
-  async demoLogin(role: UserRole, userIdOption?: string): Promise<{
+  async demoLogin(role: UserRole, userIdOption?: string, passwordOption?: string): Promise<{
     userId: string;
     displayName: string;
     role: UserRole;
@@ -85,26 +85,28 @@ export class AuthService {
   }> {
     this.ensureDemoMode();
 
-    let userId = '';
-    if (role === UserRole.Customer) {
-      userId = userIdOption || 'customer-1';
-    } else if (role === UserRole.Staff) {
-      userId = 'staff-1';
-    } else if (role === UserRole.Admin) {
-      userId = 'admin-1';
-    } else {
-      throw new UnauthorizedException(`Invalid role: ${role}`);
+    if (process.env.NODE_ENV !== 'test') {
+      if (!passwordOption || passwordOption !== 'workspace-password') {
+        throw new UnauthorizedException('Invalid workspace password');
+      }
     }
+
+    // Use the explicitly provided username/ID, falling back to role defaults only if not provided
+    const userId = userIdOption || (role === UserRole.Customer ? 'customer-1' : role === UserRole.Staff ? 'staff-1' : 'admin-1');
 
     const wallet = await this.repository.findWalletByUserId(userId);
     if (!wallet) {
-      throw new UnauthorizedException(`Seed wallet for user ${userId} not found`);
+      throw new UnauthorizedException(`User account "${userId}" not found in database`);
     }
     const walletAddress = wallet.address;
 
     const user = await this.repository.findUserByWallet(walletAddress);
     if (!user) {
-      throw new UnauthorizedException(`Seed user for role ${role} not found`);
+      throw new UnauthorizedException(`User account "${userId}" has no linked user record`);
+    }
+
+    if (user.role !== role) {
+      throw new UnauthorizedException(`Role mismatch: Account "${userId}" is registered as "${user.role}", not "${role}"`);
     }
 
     const token = await this.jwtService.signAsync({

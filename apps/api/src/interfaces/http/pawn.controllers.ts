@@ -45,8 +45,9 @@ export class AuthController {
   }
 
   @Post('demo-login')
+  @Roles() // demoLogin doesn't guard roles
   demoLogin(@Body() dto: DemoLoginDto) {
-    return this.authService.demoLogin(dto.role, dto.userId);
+    return this.authService.demoLogin(dto.role, dto.userId, dto.password);
   }
 }
 
@@ -93,6 +94,12 @@ export class EvidenceController {
   upload(@Body() dto: UploadEvidenceDto, @CurrentUser() user: AuthenticatedUser) {
     dto.uploadedBy = user.id;
     return this.workflow.uploadEvidence(dto, user);
+  }
+
+  @Get(':assetId')
+  @Roles(UserRole.Customer, UserRole.Staff, UserRole.Admin)
+  getEvidence(@Param('assetId') assetId: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.workflow.listEvidence(assetId, user);
   }
 }
 
@@ -142,6 +149,12 @@ export class LoansController {
   @Roles(UserRole.Customer)
   accept(@Param('loanId') loanId: string, @Body() dto: AcceptLoanDto, @CurrentUser() user: AuthenticatedUser) {
     return this.workflow.acceptLoan(loanId, dto, user);
+  }
+
+  @Post(':loanId/reject')
+  @Roles(UserRole.Customer)
+  reject(@Param('loanId') loanId: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.workflow.rejectLoan(loanId, user);
   }
 }
 

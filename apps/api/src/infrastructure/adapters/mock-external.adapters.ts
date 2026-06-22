@@ -80,8 +80,17 @@ export class MockPriceOracle implements PriceOracle {
 export class MockStorageProvider implements StorageProvider {
   async storeEvidence(input: { assetId: string; fileName: string; bytesBase64: string }) {
     const contentHash = createHash('sha256').update(input.bytesBase64).digest('hex');
+    let mimeType = 'image/jpeg';
+    if (input.fileName.toLowerCase().endsWith('.png')) mimeType = 'image/png';
+    else if (input.fileName.toLowerCase().endsWith('.pdf')) mimeType = 'application/pdf';
+    else if (input.fileName.toLowerCase().endsWith('.mp4')) mimeType = 'video/mp4';
+
+    const dataUrl = input.bytesBase64.startsWith('data:')
+      ? input.bytesBase64
+      : `data:${mimeType};base64,${input.bytesBase64}`;
+
     return {
-      uri: `mock-object://${input.assetId}/${contentHash}-${input.fileName}`,
+      uri: dataUrl,
       contentHash
     };
   }
