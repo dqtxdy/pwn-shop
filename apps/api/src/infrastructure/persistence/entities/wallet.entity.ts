@@ -1,4 +1,5 @@
-import { Entity, Column, PrimaryColumn } from 'typeorm';
+import { Entity, Column, PrimaryColumn, ManyToOne, JoinColumn } from 'typeorm';
+import { UserEntity } from './user.entity';
 
 @Entity('wallets')
 export class WalletEntity {
@@ -7,6 +8,10 @@ export class WalletEntity {
 
   @Column()
   userId!: string;
+
+  @ManyToOne(() => UserEntity, { onDelete: 'CASCADE' })
+  @JoinColumn({ name: 'userId' })
+  user?: UserEntity;
 
   @Column()
   address!: string;
@@ -17,3 +22,4 @@ export class WalletEntity {
   @Column({ type: 'timestamp with time zone', nullable: true })
   verifiedAt?: Date;
 }
+

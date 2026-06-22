@@ -14,3 +14,4 @@ export * from './fractional-asset.entity';
 export * from './dispute.entity';
 export * from './audit-event.entity';
 export * from './blockchain-transaction.entity';
+export * from './numeric.transformer';

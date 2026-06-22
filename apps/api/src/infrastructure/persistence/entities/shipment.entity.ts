@@ -1,5 +1,6 @@
-import { Entity, Column, PrimaryColumn } from 'typeorm';
+import { Entity, Column, PrimaryColumn, ManyToOne, JoinColumn } from 'typeorm';
 import { ShipmentDirection, ShipmentStatus } from '../../../domain/enums';
+import { AssetEntity } from './asset.entity';
 
 @Entity('shipments')
 export class ShipmentEntity {
@@ -8,6 +9,10 @@ export class ShipmentEntity {
 
   @Column()
   assetId!: string;
+
+  @ManyToOne(() => AssetEntity, { onDelete: 'CASCADE' })
+  @JoinColumn({ name: 'assetId' })
+  asset?: AssetEntity;
 
   @Column()
   direction!: ShipmentDirection;
@@ -27,3 +32,4 @@ export class ShipmentEntity {
   @Column({ type: 'timestamp with time zone' })
   updatedAt!: Date;
 }
+

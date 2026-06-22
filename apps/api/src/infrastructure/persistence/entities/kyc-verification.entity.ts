@@ -1,5 +1,6 @@
-import { Entity, Column, PrimaryColumn } from 'typeorm';
+import { Entity, Column, PrimaryColumn, ManyToOne, JoinColumn } from 'typeorm';
 import { KycStatus } from '../../../domain/enums';
+import { UserEntity } from './user.entity';
 
 @Entity('kyc_verifications')
 export class KycVerificationEntity {
@@ -8,6 +9,10 @@ export class KycVerificationEntity {
 
   @Column()
   userId!: string;
+
+  @ManyToOne(() => UserEntity, { onDelete: 'CASCADE' })
+  @JoinColumn({ name: 'userId' })
+  user?: UserEntity;
 
   @Column()
   provider!: string;
@@ -21,3 +26,4 @@ export class KycVerificationEntity {
   @Column({ type: 'timestamp with time zone' })
   checkedAt!: Date;
 }
+
