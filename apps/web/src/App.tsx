@@ -95,52 +95,7 @@ export default function App({ walletButton }: AppProps) {
   // Flash notifications
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
 
-  // Search state & handler
-  const [searchQuery, setSearchQuery] = useState('');
 
-  const handleSearch = (query: string) => {
-    const q = query.toLowerCase().trim();
-    if (!q) return;
-    if (q.length < 2) {
-      addNotification('warning', 'Enter at least 2 characters');
-      return;
-    }
-    if (!dashboard) return;
-
-    const matchedAsset = dashboard.assets.find(
-      (a) => a.id.toLowerCase().includes(q) || a.title.toLowerCase().includes(q)
-    );
-    if (matchedAsset) {
-      setSelectedAsset(matchedAsset);
-      setActiveHref('#my-assets');
-      addNotification('info', `Selected asset: "${matchedAsset.title}"`);
-      return;
-    }
-
-    const matchedLoan = dashboard.loans.find(
-      (l) => l.id.toLowerCase().includes(q) || l.assetId.toLowerCase().includes(q)
-    );
-    if (matchedLoan) {
-      const asset = dashboard.assets.find((a) => a.id === matchedLoan.assetId);
-      if (asset) {
-        setSelectedAsset(asset);
-        setActiveHref('#my-assets');
-        addNotification('info', `Opened loan ${matchedLoan.id} for "${asset.title}"`);
-        return;
-      }
-    }
-
-    const matchedListing = marketplace.find(
-      (l) => l.id.toLowerCase().includes(q) || l.assetId.toLowerCase().includes(q)
-    );
-    if (matchedListing) {
-      setActiveHref('#marketplace');
-      addNotification('info', `Opened listing ${matchedListing.id} in Marketplace`);
-      return;
-    }
-
-    addNotification('warning', `No results for "${query}"`);
-  };
 
   // Selection states
   const [selectedAsset, setSelectedAsset] = useState<Asset | null>(null);
@@ -425,7 +380,7 @@ export default function App({ walletButton }: AppProps) {
 
     return (
       <SpaceBetween size="l">
-        <Container variant="stacked" header={<Header variant="h2">Eligible Assets for Fractionalization</Header>}>
+        <Container header={<Header variant="h2">Eligible Assets for Fractionalization</Header>}>
           <div className="demo-table-wrapper">
             <Table
               variant="embedded"
@@ -459,7 +414,7 @@ export default function App({ walletButton }: AppProps) {
           </div>
         </Container>
 
-        <Container variant="stacked" header={<Header variant="h2">Active Fractional Pools</Header>}>
+        <Container header={<Header variant="h2">Active Fractional Pools</Header>}>
           <div className="demo-table-wrapper">
             <Table
               variant="embedded"
@@ -497,7 +452,7 @@ export default function App({ walletButton }: AppProps) {
           </div>
         </Container>
 
-        <Container variant="stacked" header={<Header variant="h2">My Fraction Holdings</Header>}>
+        <Container header={<Header variant="h2">My Fraction Holdings</Header>}>
           <div className="demo-table-wrapper">
             <Table
               variant="embedded"
@@ -613,7 +568,6 @@ export default function App({ walletButton }: AppProps) {
 
   const handleRoleChange = async (selectedValue: string) => {
     setNotifications([]); // Clear notifications on role switch!
-    setSearchQuery('');  // Clear search input on role switch!
     try {
       let role: 'CUSTOMER' | 'STAFF' | 'ADMIN';
       let userId: string | undefined;
@@ -1517,7 +1471,7 @@ export default function App({ walletButton }: AppProps) {
               <div className="overview-grid">
                 <div className="overview-main-column">
                   <Container
-                    variant="stacked"
+                   
                     header={
                       <Header
                         variant="h2"
@@ -1556,7 +1510,7 @@ export default function App({ walletButton }: AppProps) {
                 </div>
 
                 <div className="overview-side-column">
-                  <Container variant="stacked" header={<Header variant="h2">Evidence and Shipment Summary</Header>}>
+                  <Container header={<Header variant="h2">Evidence and Shipment Summary</Header>}>
                     <div className="summary-grid">
                       {customerShipmentSummary.map((item) => (
                         <div key={item.label} className="summary-item">
@@ -1569,7 +1523,7 @@ export default function App({ walletButton }: AppProps) {
                 </div>
               </div>
 
-              <Container variant="stacked" header={<Header variant="h2">Recent Asset Activity</Header>}>
+              <Container header={<Header variant="h2">Recent Asset Activity</Header>}>
                 <Table
                   variant="embedded"
                   contentDensity="compact"
@@ -1588,7 +1542,7 @@ export default function App({ walletButton }: AppProps) {
                 />
               </Container>
 
-              <Container variant="stacked" header={<Header variant="h2">My Layaways</Header>}>
+              <Container header={<Header variant="h2">My Layaways</Header>}>
                 <Table
                   variant="embedded"
                   contentDensity="compact"
@@ -1671,7 +1625,7 @@ export default function App({ walletButton }: AppProps) {
 
         case '#new-pawn':
           return (
-            <Container variant="stacked" header={<Header variant="h2">New Pawn Request</Header>}>
+            <Container header={<Header variant="h2">New Pawn Request</Header>}>
               <form onSubmit={onSubmitAsset}>
                 <Form
                   actions={
@@ -1773,7 +1727,7 @@ export default function App({ walletButton }: AppProps) {
 
           return (
             <div className="assets-layout">
-              <Container variant="stacked" header={<Header variant="h2">My Assets</Header>}>
+              <Container header={<Header variant="h2">My Assets</Header>}>
                 <div className="demo-table-wrapper">
                   <Table
                     variant="embedded"
@@ -1809,7 +1763,7 @@ export default function App({ walletButton }: AppProps) {
                 </div>
               </Container>
 
-              <Container variant="stacked" header={<Header variant="h2">Asset Lifecycle Detail</Header>}>
+              <Container header={<Header variant="h2">Asset Lifecycle Detail</Header>}>
                 {selectedAsset ? (
                   <SpaceBetween size="l">
                     <div>
@@ -1905,7 +1859,7 @@ export default function App({ walletButton }: AppProps) {
         case '#marketplace':
           return (
             <SpaceBetween size="l">
-              <Container variant="stacked" header={<Header variant="h2">Protocol Marketplace</Header>}>
+              <Container header={<Header variant="h2">Protocol Marketplace</Header>}>
                 <div className="demo-table-wrapper marketplace-table-wrapper">
                   <Table
                     variant="embedded"
@@ -1965,7 +1919,7 @@ export default function App({ walletButton }: AppProps) {
               </Container>
 
               <div className="marketplace-support-grid">
-                <Container variant="stacked" header={<Header variant="h2">Verified Vault Sale</Header>}>
+                <Container header={<Header variant="h2">Verified Vault Sale</Header>}>
                   <SpaceBetween size="s">
                     <Box className="muted-copy">
                       Listings are published only after vault verification and custody handoff.
@@ -1983,7 +1937,7 @@ export default function App({ walletButton }: AppProps) {
                   </SpaceBetween>
                 </Container>
 
-                <Container variant="stacked" header={<Header variant="h2">Layaway Terms</Header>}>
+                <Container header={<Header variant="h2">Layaway Terms</Header>}>
                   <SpaceBetween size="s">
                     <Alert type="info" header="Settlement window">
                       Remaining balance is spread over a maximum duration of 6 months.
@@ -2024,7 +1978,7 @@ export default function App({ walletButton }: AppProps) {
 
               <div className="evidence-layout">
                 <div className="evidence-main-column">
-                  <Container variant="stacked" header={<Header variant="h2">Evidence & Shipments Logs</Header>}>
+                  <Container header={<Header variant="h2">Evidence & Shipments Logs</Header>}>
                     <div className="demo-table-wrapper">
                       <Table
                         variant="embedded"
@@ -2061,7 +2015,7 @@ export default function App({ walletButton }: AppProps) {
                 </div>
 
                 <div className="evidence-side-column">
-                  <Container variant="stacked" header={<Header variant="h2">Logistics Adapter</Header>}>
+                  <Container header={<Header variant="h2">Logistics Adapter</Header>}>
                     <SpaceBetween size="s">
                       <Box className="muted-copy">
                         Courier adapter for tracking and custody handoff events.
@@ -2120,7 +2074,7 @@ export default function App({ walletButton }: AppProps) {
               </div>
 
               <div className="two-column-layout">
-                <Container variant="stacked" header={<Header variant="h2">Validation Work Queue</Header>}>
+                <Container header={<Header variant="h2">Validation Work Queue</Header>}>
                   <div className="demo-table-wrapper">
                     <Table
                       variant="embedded"
@@ -2212,7 +2166,7 @@ export default function App({ walletButton }: AppProps) {
                   </div>
                 </Container>
 
-                <Container variant="stacked" header={<Header variant="h2">Validator Next Action</Header>}>
+                <Container header={<Header variant="h2">Validator Next Action</Header>}>
                   {selectedStaffAsset ? (
                     <SpaceBetween size="m">
                       <div>
@@ -2299,7 +2253,7 @@ export default function App({ walletButton }: AppProps) {
               </div>
 
               <div className="two-column-layout">
-                <Container variant="stacked" header={<Header variant="h2">Intake Evidence Logs</Header>}>
+                <Container header={<Header variant="h2">Intake Evidence Logs</Header>}>
                   <Box color="text-label" padding={{ bottom: 's' }}>Validator unboxing proof and evidence timeline.</Box>
                   <div className="demo-table-wrapper">
                     <Table
@@ -2333,7 +2287,7 @@ export default function App({ walletButton }: AppProps) {
                   </div>
                 </Container>
 
-                <Container variant="stacked" header={<Header variant="h2">Storage & Timelines</Header>}>
+                <Container header={<Header variant="h2">Storage & Timelines</Header>}>
                   <SpaceBetween size="s">
                     <Box className="muted-copy">
                       Evidence is stored through the configured storage adapter and verified by content hash.
@@ -2359,7 +2313,7 @@ export default function App({ walletButton }: AppProps) {
 
           return (
             <div className="two-column-layout">
-              <Container variant="stacked" header={<Header variant="h2">Appraisal & Offer Operations Form</Header>}>
+              <Container header={<Header variant="h2">Appraisal & Offer Operations Form</Header>}>
                 <form onSubmit={onSubmitAppraisal}>
                   <Form
                     actions={
@@ -2401,7 +2355,7 @@ export default function App({ walletButton }: AppProps) {
               </Container>
 
               <SpaceBetween size="l">
-                <Container variant="stacked" header={<Header variant="h2">Asset Context Panel</Header>}>
+                <Container header={<Header variant="h2">Asset Context Panel</Header>}>
                   {targetAsset ? (
                     <SpaceBetween size="m">
                       <div>
@@ -2428,7 +2382,7 @@ export default function App({ walletButton }: AppProps) {
                   )}
                 </Container>
 
-                <Container variant="stacked" header={<Header variant="h2">Risk Policy</Header>}>
+                <Container header={<Header variant="h2">Risk Policy</Header>}>
                   <SpaceBetween size="s">
                     <Alert header="Maximum LTV Rule" type="warning">
                       Appraisals are capped at 70% LTV.
@@ -2474,7 +2428,7 @@ export default function App({ walletButton }: AppProps) {
               </div>
 
               <div className="two-column-layout">
-                <Container variant="stacked" header={<Header variant="h2">Loan Offers</Header>}>
+                <Container header={<Header variant="h2">Loan Offers</Header>}>
                   <div className="demo-table-wrapper">
                     <Table
                       variant="embedded"
@@ -2509,7 +2463,7 @@ export default function App({ walletButton }: AppProps) {
                   </div>
                 </Container>
 
-                <Container variant="stacked" header={<Header variant="h2">Offer Settlement</Header>}>
+                <Container header={<Header variant="h2">Offer Settlement</Header>}>
                   <SpaceBetween size="s">
                     <Box className="muted-copy">
                       Staff draft the offer. In Anvil mode, the customer signs the loan transaction with their wallet.
@@ -2566,7 +2520,7 @@ export default function App({ walletButton }: AppProps) {
               />
 
               <div className="two-column-layout">
-                <Container variant="stacked" header={<Header variant="h2">Recent System Events</Header>}>
+                <Container header={<Header variant="h2">Recent System Events</Header>}>
                   <div className="demo-table-wrapper">
                     <Table
                       variant="embedded"
@@ -2584,7 +2538,7 @@ export default function App({ walletButton }: AppProps) {
                 </Container>
 
                 <SpaceBetween size="l">
-                  <Container variant="stacked" header={<Header variant="h2">Adapter Connectivity Health</Header>}>
+                  <Container header={<Header variant="h2">Adapter Connectivity Health</Header>}>
                     <div className="health-status-grid">
                       <div className="health-card">
                         <Box variant="awsui-key-label">KYC Adapter</Box>
@@ -2609,7 +2563,7 @@ export default function App({ walletButton }: AppProps) {
                     </div>
                   </Container>
 
-                  <Container variant="stacked" header={<Header variant="h2">Risk Policy Limits</Header>}>
+                  <Container header={<Header variant="h2">Risk Policy Limits</Header>}>
                     <div className="summary-grid">
                       <div className="summary-item">
                         <Box variant="awsui-key-label">Max LTV</Box>
@@ -2656,7 +2610,7 @@ export default function App({ walletButton }: AppProps) {
                 </div>
               </div>
 
-              <Container variant="stacked" header={<Header variant="h2">Traceability Events Audit Log</Header>}>
+              <Container header={<Header variant="h2">Traceability Events Audit Log</Header>}>
                 <div className="demo-table-wrapper">
                   <Table
                     variant="embedded"
@@ -2688,7 +2642,7 @@ export default function App({ walletButton }: AppProps) {
         case '#risk-parameters':
           return (
             <SpaceBetween size="l">
-              <Container variant="stacked" header={<Header variant="h2">Risk Parameters Configuration</Header>}>
+              <Container header={<Header variant="h2">Risk Parameters Configuration</Header>}>
                 <div className="health-status-grid">
                   <div className="health-card">
                     <Box variant="awsui-key-label">Maximum LTV Threshold</Box>
@@ -2713,7 +2667,7 @@ export default function App({ walletButton }: AppProps) {
                 </div>
               </Container>
 
-              <Container variant="stacked" header={<Header variant="h2">Governance Authority</Header>}>
+              <Container header={<Header variant="h2">Governance Authority</Header>}>
                 <SpaceBetween size="s">
                   <Box className="muted-copy">
                     Risk settings are on-chain. Updates require 2/3 multisig approval.
@@ -2760,7 +2714,7 @@ export default function App({ walletButton }: AppProps) {
               </div>
 
               <div className="two-column-layout">
-                <Container variant="stacked" header={<Header variant="h2">Treasury Contract</Header>}>
+                <Container header={<Header variant="h2">Treasury Contract</Header>}>
                   <SpaceBetween size="m">
                     <div>
                       <Box variant="awsui-key-label">Contract Address</Box>
@@ -2787,7 +2741,7 @@ export default function App({ walletButton }: AppProps) {
                   </SpaceBetween>
                 </Container>
 
-                <Container variant="stacked" header={<Header variant="h2">Liquidity & Settlement Engine</Header>}>
+                <Container header={<Header variant="h2">Liquidity & Settlement Engine</Header>}>
                   <SpaceBetween size="s">
                     <Box className="muted-copy">
                       A 500K USDC reserve funds active loans. Matured defaults move to liquidation.
@@ -2811,9 +2765,9 @@ export default function App({ walletButton }: AppProps) {
         case '#system-adapters':
           return (
             <SpaceBetween size="l">
-              <Container variant="stacked" header={<Header variant="h2">System Adapters</Header>}>
+              <Container header={<Header variant="h2">System Adapters</Header>}>
                 <ColumnLayout columns={2}>
-                  <Container variant="stacked" header={<Header variant="h3">KYC/AML Provider Adapter</Header>}>
+                  <Container header={<Header variant="h3">KYC/AML Provider Adapter</Header>}>
                     <SpaceBetween size="xs">
                       <StatusIndicator type="success">Connected</StatusIndicator>
                       <Box className="muted-copy">
@@ -2822,7 +2776,7 @@ export default function App({ walletButton }: AppProps) {
                       <span className="latency-text">Port: IKycProvider | Latency: 12ms</span>
                     </SpaceBetween>
                   </Container>
-                  <Container variant="stacked" header={<Header variant="h3">Logistics Courier Adapter</Header>}>
+                  <Container header={<Header variant="h3">Logistics Courier Adapter</Header>}>
                     <SpaceBetween size="xs">
                       <StatusIndicator type="success">Connected</StatusIndicator>
                       <Box className="muted-copy">
@@ -2831,7 +2785,7 @@ export default function App({ walletButton }: AppProps) {
                       <span className="latency-text">Port: ILogisticsProvider | Latency: 34ms</span>
                     </SpaceBetween>
                   </Container>
-                  <Container variant="stacked" header={<Header variant="h3">Decentralized Storage Adapter</Header>}>
+                  <Container header={<Header variant="h3">Decentralized Storage Adapter</Header>}>
                     <SpaceBetween size="xs">
                       <StatusIndicator type="success">Connected</StatusIndicator>
                       <Box className="muted-copy">
@@ -2840,7 +2794,7 @@ export default function App({ walletButton }: AppProps) {
                       <span className="latency-text">Port: IStorageProvider | Latency: 82ms</span>
                     </SpaceBetween>
                   </Container>
-                  <Container variant="stacked" header={<Header variant="h3">Blockchain Web3 Gateway</Header>}>
+                  <Container header={<Header variant="h3">Blockchain Web3 Gateway</Header>}>
                     <SpaceBetween size="xs">
                       {blockchainConfig?.mode === 'anvil' ? (
                         blockchainHealth?.healthy ? (
@@ -2902,24 +2856,7 @@ export default function App({ walletButton }: AppProps) {
           </span>
         </div>
 
-        <div className="console-topbar__search">
-          <div className="search-input-wrapper" style={{ position: 'relative', display: 'flex', alignItems: 'center', width: '100%' }}>
-            <Input
-              value={searchQuery}
-              onChange={({ detail }) => {
-                setSearchQuery(detail.value);
-              }}
-              onKeyDown={(e) => {
-                if (e.detail.key === 'Enter') {
-                  handleSearch(searchQuery);
-                }
-              }}
-              placeholder="Search assets, loans, listings, tx"
-              type="search"
-            />
-            <span className="search-enter-hint" style={{ position: 'absolute', right: '8px', pointerEvents: 'none', zIndex: 10 }}>↵ Enter</span>
-          </div>
-        </div>
+
 
         <div className="console-topbar__actions">
           <div className="session-indicator">
@@ -2967,7 +2904,6 @@ export default function App({ walletButton }: AppProps) {
                 e.preventDefault();
                 setActiveHref(e.detail.href);
                 setNotifications([]); // Clear notifications on page navigation!
-                setSearchQuery('');  // Clear search input on page navigation!
               }}
               items={sideNavItems()}
             />
@@ -2984,7 +2920,6 @@ export default function App({ walletButton }: AppProps) {
                       event.preventDefault();
                       setActiveHref(event.detail.href);
                       setNotifications([]); // Clear notifications on page navigation!
-                      setSearchQuery('');  // Clear search input on page navigation!
                     }}
                     ariaLabel="Breadcrumbs"
                   />

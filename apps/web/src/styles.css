@@ -21,12 +21,18 @@ body {
 }
 
 .app-shell {
-  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
   background: #dfe7e5;
+  overflow: hidden;
 }
 
 .workspace-shell {
+  flex: 1;
   background: var(--surface-muted);
+  position: relative;
+  overflow: hidden;
 }
 
 .content-shell {
