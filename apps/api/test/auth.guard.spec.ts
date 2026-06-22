@@ -4,6 +4,8 @@ import * as request from 'supertest';
 import { ValidationPipe } from '@nestjs/common';
 import { PAWN_REPOSITORY } from '../src/common/tokens';
 import { AssetStatus, UserRole } from '../src/domain/enums';
+import { AuthService } from '../src/application/services/auth.service';
+import { AppModule } from '../src/app.module';
 
 describe('Auth Guards & Role Restrictions (Integration)', () => {
   let app: INestApplication;
@@ -258,9 +260,10 @@ describe('Auth Guards & Role Restrictions (Integration)', () => {
         });
       const assetId = assetRes.body.id;
 
+      // Asset owner (otherCustomer) creates the TO_SHOP shipment; staff can only RETURN_TO_CUSTOMER
       const shipmentRes = await request(app.getHttpServer())
         .post('/api/shipments')
-        .set('Authorization', `Bearer ${staffToken}`)
+        .set('Authorization', `Bearer ${otherCustomerToken}`)
         .send({
           assetId,
           direction: 'TO_SHOP',

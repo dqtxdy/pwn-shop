@@ -178,8 +178,55 @@ describe('PawnRepository Contract Tests', () => {
       expect(foundMixed?.id).toBe('test-user-mixed');
     });
 
+    testFn('should preserve layaway wei fields as strings', async () => {
+      if (!repo) return;
+
+      const listing: Listing = {
+        id: 'listing-wei',
+        assetId: 'A-1004',
+        sellerId: 'customer-1',
+        price: 1000,
+        status: ListingStatus.Active,
+        isProtocolOwned: false,
+        createdAt: new Date()
+      };
+      await repo.saveListing(listing);
+
+      const layaway: Layaway = {
+        id: 'layaway-wei',
+        listingId: listing.id,
+        buyerId: 'customer-2',
+        totalPrice: 1000,
+        amountPaid: 200,
+        deadline: new Date(),
+        status: LayawayStatus.Active,
+        monthsDuration: 6,
+        installmentAmount: 133,
+        downPayment: 200,
+        paidInstallments: 0,
+        amountPaidWei: '200000000000000000000',
+        downPaymentWei: '200000000000000000000'
+      };
+      await repo.saveLayaway(layaway);
+
+      const found = await repo.findLayaway(layaway.id);
+      expect(found?.amountPaidWei).toBe('200000000000000000000');
+      expect(found?.downPaymentWei).toBe('200000000000000000000');
+      expect(typeof found?.amountPaidWei).toBe('string');
+      expect(typeof found?.downPaymentWei).toBe('string');
+    });
+
     testFn('should save and find a wallet by userId', async () => {
       if (!repo) return;
+
+      const user: User = {
+        id: 'test-user-2',
+        displayName: 'Test User 2',
+        role: UserRole.Customer,
+        kycStatus: KycStatus.Verified,
+        createdAt: new Date()
+      };
+      await repo.saveUser(user);
 
       const wallet: Wallet = {
         id: 'w-test-2',
@@ -198,6 +245,15 @@ describe('PawnRepository Contract Tests', () => {
     testFn('should save KYC verification', async () => {
       if (!repo) return;
 
+      const user: User = {
+        id: 'test-user-1',
+        displayName: 'Test User 1',
+        role: UserRole.Customer,
+        kycStatus: KycStatus.Verified,
+        createdAt: new Date()
+      };
+      await repo.saveUser(user);
+
       const kyc: KycVerification = {
         id: 'kyc-1',
         userId: 'test-user-1',
@@ -212,6 +268,15 @@ describe('PawnRepository Contract Tests', () => {
 
     testFn('should save, find, and list assets', async () => {
       if (!repo) return;
+
+      const user: User = {
+        id: 'test-user-1',
+        displayName: 'Test User 1',
+        role: UserRole.Customer,
+        kycStatus: KycStatus.Verified,
+        createdAt: new Date()
+      };
+      await repo.saveUser(user);
 
       const asset: Asset = {
         id: 'test-asset-1',
@@ -238,6 +303,36 @@ describe('PawnRepository Contract Tests', () => {
     testFn('should save and list evidence files', async () => {
       if (!repo) return;
 
+      const user: User = {
+        id: 'test-user-1',
+        displayName: 'Test User 1',
+        role: UserRole.Customer,
+        kycStatus: KycStatus.Verified,
+        createdAt: new Date()
+      };
+      await repo.saveUser(user);
+
+      const staff: User = {
+        id: 'staff-1',
+        displayName: 'Staff 1',
+        role: UserRole.Staff,
+        kycStatus: KycStatus.Verified,
+        createdAt: new Date()
+      };
+      await repo.saveUser(staff);
+
+      const asset: Asset = {
+        id: 'test-asset-1',
+        ownerId: 'test-user-1',
+        title: 'MacBook Pro',
+        category: 'electronics',
+        description: 'New laptop',
+        status: AssetStatus.Received,
+        declaredValue: 2000,
+        createdAt: new Date()
+      };
+      await repo.saveAsset(asset);
+
       const file: EvidenceFile = {
         id: 'ev-1',
         assetId: 'test-asset-1',
@@ -256,6 +351,27 @@ describe('PawnRepository Contract Tests', () => {
 
     testFn('should save and find shipment details', async () => {
       if (!repo) return;
+
+      const user: User = {
+        id: 'test-user-1',
+        displayName: 'Test User 1',
+        role: UserRole.Customer,
+        kycStatus: KycStatus.Verified,
+        createdAt: new Date()
+      };
+      await repo.saveUser(user);
+
+      const asset: Asset = {
+        id: 'test-asset-1',
+        ownerId: 'test-user-1',
+        title: 'MacBook Pro',
+        category: 'electronics',
+        description: 'New laptop',
+        status: AssetStatus.Received,
+        declaredValue: 2000,
+        createdAt: new Date()
+      };
+      await repo.saveAsset(asset);
 
       const shipment: Shipment = {
         id: 's-1',
@@ -277,6 +393,36 @@ describe('PawnRepository Contract Tests', () => {
 
     testFn('should save loan, appraisal, and repayments', async () => {
       if (!repo) return;
+
+      const user: User = {
+        id: 'test-user-1',
+        displayName: 'Test User 1',
+        role: UserRole.Customer,
+        kycStatus: KycStatus.Verified,
+        createdAt: new Date()
+      };
+      await repo.saveUser(user);
+
+      const staff: User = {
+        id: 'staff-1',
+        displayName: 'Staff 1',
+        role: UserRole.Staff,
+        kycStatus: KycStatus.Verified,
+        createdAt: new Date()
+      };
+      await repo.saveUser(staff);
+
+      const asset: Asset = {
+        id: 'test-asset-1',
+        ownerId: 'test-user-1',
+        title: 'MacBook Pro',
+        category: 'electronics',
+        description: 'New laptop',
+        status: AssetStatus.Received,
+        declaredValue: 2000,
+        createdAt: new Date()
+      };
+      await repo.saveAsset(asset);
 
       const appraisal: Appraisal = {
         id: 'ap-1',
@@ -318,6 +464,36 @@ describe('PawnRepository Contract Tests', () => {
 
     testFn('should save, find, and list listings and layaways', async () => {
       if (!repo) return;
+
+      const user1: User = {
+        id: 'test-user-1',
+        displayName: 'Test User 1',
+        role: UserRole.Customer,
+        kycStatus: KycStatus.Verified,
+        createdAt: new Date()
+      };
+      await repo.saveUser(user1);
+
+      const user2: User = {
+        id: 'test-user-2',
+        displayName: 'Test User 2',
+        role: UserRole.Customer,
+        kycStatus: KycStatus.Verified,
+        createdAt: new Date()
+      };
+      await repo.saveUser(user2);
+
+      const asset: Asset = {
+        id: 'test-asset-1',
+        ownerId: 'test-user-1',
+        title: 'MacBook Pro',
+        category: 'electronics',
+        description: 'New laptop',
+        status: AssetStatus.Received,
+        declaredValue: 2000,
+        createdAt: new Date()
+      };
+      await repo.saveAsset(asset);
 
       const listing: Listing = {
         id: 'list-1',
@@ -363,6 +539,36 @@ describe('PawnRepository Contract Tests', () => {
     testFn('should save and retrieve fractionalized assets and positions', async () => {
       if (!repo) return;
 
+      const user1: User = {
+        id: 'test-user-1',
+        displayName: 'Test User 1',
+        role: UserRole.Customer,
+        kycStatus: KycStatus.Verified,
+        createdAt: new Date()
+      };
+      await repo.saveUser(user1);
+
+      const user2: User = {
+        id: 'test-user-2',
+        displayName: 'Test User 2',
+        role: UserRole.Customer,
+        kycStatus: KycStatus.Verified,
+        createdAt: new Date()
+      };
+      await repo.saveUser(user2);
+
+      const asset: Asset = {
+        id: 'test-asset-1',
+        ownerId: 'test-user-1',
+        title: 'MacBook Pro',
+        category: 'electronics',
+        description: 'New laptop',
+        status: AssetStatus.Received,
+        declaredValue: 2000,
+        createdAt: new Date()
+      };
+      await repo.saveAsset(asset);
+
       const fracAsset: FractionalAsset = {
         assetId: 'test-asset-1',
         originalOwner: 'test-user-1',
@@ -403,6 +609,27 @@ describe('PawnRepository Contract Tests', () => {
 
     testFn('should save dispute, audit event, and blockchain transaction', async () => {
       if (!repo) return;
+
+      const user: User = {
+        id: 'test-user-1',
+        displayName: 'Test User 1',
+        role: UserRole.Customer,
+        kycStatus: KycStatus.Verified,
+        createdAt: new Date()
+      };
+      await repo.saveUser(user);
+
+      const asset: Asset = {
+        id: 'test-asset-1',
+        ownerId: 'test-user-1',
+        title: 'MacBook Pro',
+        category: 'electronics',
+        description: 'New laptop',
+        status: AssetStatus.Received,
+        declaredValue: 2000,
+        createdAt: new Date()
+      };
+      await repo.saveAsset(asset);
 
       const dispute: Dispute = {
         id: 'disp-1',
@@ -489,5 +716,220 @@ Error details: ${err.message || err}
 
     // If POSTGRES_TESTS is not 1, we pass shouldSkip=true so Jest shows them as skipped
     runContractTests(getRepo, !runPostgres);
+
+    const testFn = !runPostgres ? it.skip : it;
+
+    testFn('should rollback transaction on error', async () => {
+      if (!postgresRepo) return;
+      
+      await postgresRepo.reset();
+
+      const user: User = {
+        id: 'u-tx-rollback',
+        displayName: 'Tx User',
+        role: UserRole.Customer,
+        kycStatus: KycStatus.Verified,
+        createdAt: new Date()
+      };
+      await postgresRepo.saveUser(user);
+
+      try {
+        await postgresRepo.runInTransaction(async (txRepo) => {
+          await txRepo.saveAsset({
+            id: 'a-tx-rollback',
+            ownerId: 'u-tx-rollback',
+            title: 'Tx Asset',
+            category: 'electronics',
+            description: 'Asset in transaction',
+            status: AssetStatus.Received,
+            declaredValue: 100,
+            createdAt: new Date()
+          });
+
+          const assetInside = await txRepo.findAsset('a-tx-rollback');
+          expect(assetInside).toBeDefined();
+
+          throw new Error('Force Rollback');
+        });
+      } catch (err: any) {
+        expect(err.message).toBe('Force Rollback');
+      }
+
+      const assetOutside = await postgresRepo.findAsset('a-tx-rollback');
+      expect(assetOutside).toBeUndefined();
+    });
+
+    testFn('should enforce check constraint on asset declaredValue', async () => {
+      if (!postgresRepo) return;
+
+      await postgresRepo.reset();
+
+      const user: User = {
+        id: 'u-check-constraint',
+        displayName: 'Check User',
+        role: UserRole.Customer,
+        kycStatus: KycStatus.Verified,
+        createdAt: new Date()
+      };
+      await postgresRepo.saveUser(user);
+
+      await expect(
+        postgresRepo.saveAsset({
+          id: 'a-check-constraint',
+          ownerId: 'u-check-constraint',
+          title: 'Invalid Asset',
+          category: 'electronics',
+          description: 'Negative declaredValue',
+          status: AssetStatus.Received,
+          declaredValue: -100,
+          createdAt: new Date()
+        })
+      ).rejects.toThrow();
+    });
+
+    testFn('should enforce partial unique index for active/offered loans on the same asset', async () => {
+      if (!postgresRepo) return;
+
+      await postgresRepo.reset();
+
+      const user: User = {
+        id: 'u-loans',
+        displayName: 'Loan User',
+        role: UserRole.Customer,
+        kycStatus: KycStatus.Verified,
+        createdAt: new Date()
+      };
+      await postgresRepo.saveUser(user);
+
+      const asset: Asset = {
+        id: 'a-loans',
+        ownerId: 'u-loans',
+        title: 'Loan Asset',
+        category: 'electronics',
+        description: 'Test Asset',
+        status: AssetStatus.Received,
+        declaredValue: 1000,
+        createdAt: new Date()
+      };
+      await postgresRepo.saveAsset(asset);
+
+      const loan1: Loan = {
+        id: 'l-active-1',
+        assetId: 'a-loans',
+        borrowerId: 'u-loans',
+        principal: 500,
+        aprBps: 1000,
+        durationDays: 30,
+        status: LoanStatus.Active,
+        createdAt: new Date()
+      };
+      await postgresRepo.saveLoan(loan1);
+
+      const loan2: Loan = {
+        id: 'l-active-2',
+        assetId: 'a-loans',
+        borrowerId: 'u-loans',
+        principal: 400,
+        aprBps: 1000,
+        durationDays: 30,
+        status: LoanStatus.Active,
+        createdAt: new Date()
+      };
+      await expect(postgresRepo.saveLoan(loan2)).rejects.toThrow();
+    });
+
+    testFn('should be idempotent on reset and support consecutive resets', async () => {
+      if (!postgresRepo) return;
+
+      await expect(postgresRepo.reset()).resolves.not.toThrow();
+      await expect(postgresRepo.reset()).resolves.not.toThrow();
+    });
+
+    testFn('system user should exist after initialize', async () => {
+      if (!postgresRepo) return;
+
+      const systemUser = await postgresRepo.findUserById('system');
+      expect(systemUser).toBeDefined();
+      expect(systemUser!.id).toBe('system');
+      expect(systemUser!.displayName).toBe('System Account');
+      expect(systemUser!.role).toBe(UserRole.Admin);
+      expect(systemUser!.kycStatus).toBe(KycStatus.Verified);
+    });
+
+    testFn('system user should persist after reset', async () => {
+      if (!postgresRepo) return;
+
+      await postgresRepo.reset();
+      const systemUser = await postgresRepo.findUserById('system');
+      expect(systemUser).toBeDefined();
+      expect(systemUser!.id).toBe('system');
+
+      // Second reset — must still be idempotent
+      await postgresRepo.reset();
+      const systemUser2 = await postgresRepo.findUserById('system');
+      expect(systemUser2).toBeDefined();
+      expect(systemUser2!.role).toBe(UserRole.Admin);
+      expect(systemUser2!.kycStatus).toBe(KycStatus.Verified);
+    });
+
+    testFn('system user should be normalized back to ADMIN and VERIFIED on reset', async () => {
+      if (!postgresRepo) return;
+
+      await postgresRepo.saveUser({
+        id: 'system',
+        displayName: 'legacy system',
+        role: 'admin' as UserRole,
+        kycStatus: 'verified' as KycStatus,
+        createdAt: new Date()
+      });
+
+      await postgresRepo.reset();
+
+      const systemUser = await postgresRepo.findUserById('system');
+      expect(systemUser).toBeDefined();
+      expect(systemUser!.displayName).toBe('System Account');
+      expect(systemUser!.role).toBe(UserRole.Admin);
+      expect(systemUser!.kycStatus).toBe(KycStatus.Verified);
+    });
+
+    testFn('admin fractionalization should not cause FK violation on originalOwner', async () => {
+      if (!postgresRepo) return;
+
+      await postgresRepo.reset();
+
+      // admin-1 is seeded in DEMO_MODE. For this test we create a standalone admin user.
+      const adminUser: User = {
+        id: 'u-admin-frac',
+        displayName: 'Admin For Frac Test',
+        role: UserRole.Admin,
+        kycStatus: KycStatus.Verified,
+        createdAt: new Date()
+      };
+      await postgresRepo.saveUser(adminUser);
+
+      const asset: Asset = {
+        id: 'a-admin-frac',
+        ownerId: 'u-admin-frac',
+        title: 'Frac Asset',
+        category: 'electronics',
+        description: 'For fractionalization FK test',
+        status: AssetStatus.Received,
+        declaredValue: 10000,
+        createdAt: new Date()
+      };
+      await postgresRepo.saveAsset(asset);
+
+      // originalOwner = admin user id (not 'system') — should not throw FK error
+      await expect(
+        postgresRepo.saveFractionalAsset({
+          assetId: 'a-admin-frac',
+          originalOwner: 'u-admin-frac',
+          totalShares: 100,
+          availableShares: 100,
+          pricePerShare: 100,
+          status: 'ACTIVE'
+        })
+      ).resolves.toBeDefined();
+    });
   });
 });

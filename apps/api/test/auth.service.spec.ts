@@ -176,12 +176,14 @@ describe('AuthService', () => {
       process.env.BLOCKCHAIN_MODE = originalBlockchainMode;
     });
 
-    it('returns customer session without wallet when no address passed', async () => {
+    it('returns customer session with seeded Anvil wallet when no address passed', async () => {
+      // In anvil mode the in-memory repo seeds a deterministic wallet for customer-1;
+      // demoLogin falls back to that address so the frontend can discover it.
       const session = await anvilService.demoLogin(UserRole.Customer);
       expect(session.userId).toBe('customer-1');
       expect(session.displayName).toBe('Demo Customer 1');
       expect(session.role).toBe(UserRole.Customer);
-      expect(session.walletAddress).toBeUndefined();
+      expect(session.walletAddress).toBe('0x70997970c51812dc3a010c7d01b50e0d17dc79c8');
     });
 
     it('returns customer session with the Anvil wallet address provided by the frontend', async () => {

@@ -449,6 +449,20 @@ describe('PawnWorkflowService', () => {
         }
       });
     });
+
+    it('rejects createLayaway when no actor and no buyerId provided', async () => {
+      // BLOCKER 1 fix: 'system' must not be silently used as FK buyer.
+      // Without an actor or explicit buyerId, createLayaway must throw.
+      await expect(
+        service.createLayaway({
+          listingId: activeListingId,
+          // buyerId intentionally omitted
+          downPayment: 200,
+          monthsDuration: 6
+        })
+        // no actor argument
+      ).rejects.toThrow('buyerId is required');
+    });
   });
 
   describe('payLayaway', () => {
@@ -914,6 +928,41 @@ describe('PawnWorkflowService', () => {
       expect(res).toBeDefined();
       expect(capturedSellerWallet).toBe('0xabcabcabcabcabcabcabcabcabcabcabcabcabca');
 
+      gateway.prepareCreateListing = originalPrepare;
+      gateway.getBlockchainConfig = () => originalConfig;
+    });
+
+    it('does not call runInTransaction for anvil listing prepare path', async () => {
+      const asset = await repository.findAsset('A-1004');
+      asset!.status = AssetStatus.Received;
+      await repository.saveAsset(asset!);
+
+      const runInTransaction = jest.fn(async (fn: any) => fn(repository));
+      (repository as any).runInTransaction = runInTransaction;
+
+      const gateway = moduleRef.get(BLOCKCHAIN_GATEWAY) as any;
+      const originalConfig = gateway.getBlockchainConfig();
+      const originalPrepare = gateway.prepareCreateListing;
+      gateway.getBlockchainConfig = () => ({ mode: 'anvil' });
+      gateway.prepareCreateListing = async () => ({
+        status: 'AWAITING_WALLET_EXECUTION',
+        actions: []
+      });
+
+      const res = await service.createListing({
+        assetId: 'A-1004',
+        price: 1500,
+        isProtocolOwned: false
+      }, {
+        id: 'customer-1',
+        role: UserRole.Customer,
+        wallet: '0xabcabcabcabcabcabcabcabcabcabcabcabcabca'
+      });
+
+      expect((res as any).status).toBe('AWAITING_WALLET_EXECUTION');
+      expect(runInTransaction).not.toHaveBeenCalled();
+
+      delete (repository as any).runInTransaction;
       gateway.prepareCreateListing = originalPrepare;
       gateway.getBlockchainConfig = () => originalConfig;
     });
