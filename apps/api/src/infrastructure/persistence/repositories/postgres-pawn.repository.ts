@@ -498,6 +498,13 @@ export class PostgresPawnRepository implements PawnRepository, OnApplicationShut
     return user || undefined;
   }
 
+  async findUserById(id: string): Promise<User | undefined> {
+    const user = await this.dataSource.getRepository(UserEntity).findOne({
+      where: { id }
+    });
+    return user || undefined;
+  }
+
   async saveWallet(wallet: Wallet): Promise<Wallet> {
     wallet.address = wallet.address.toLowerCase();
     await this.dataSource.getRepository(WalletEntity).save(wallet);

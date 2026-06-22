@@ -226,6 +226,10 @@ export class DemoLoginDto {
   @IsOptional()
   @IsString()
   password?: string;
+
+  @IsOptional()
+  @IsString()
+  walletAddress?: string;
 }
 
 export class FractionalizeAssetDto {

@@ -687,6 +687,18 @@ export default function App({ walletButton }: AppProps) {
     }
   }, [activeHref, selectedAsset, dashboard, session]);
 
+  // Track MetaMask account changes AFTER login.
+  // When the user switches wallets in MetaMask, update session.walletAddress
+  // so the mismatch warning reflects the current live state.
+  useEffect(() => {
+    if (!session) return;
+    const liveWallet = (isConnected && connectedAddress) ? connectedAddress.toLowerCase() : undefined;
+    if (liveWallet !== session.walletAddress) {
+      setSession(prev => prev ? { ...prev, walletAddress: liveWallet } : prev);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [connectedAddress, isConnected]);
+
   const handleLogin = async (options?: { allowEmptyCredentials?: boolean }) => {
     const allowEmptyCredentials = options?.allowEmptyCredentials ?? false;
     setLoginError('');
@@ -698,17 +710,21 @@ export default function App({ walletButton }: AppProps) {
 
     setLoginLoading(true);
     try {
+      // Capture the currently-connected MetaMask address at login time.
+      // This is the "active wallet" for this session — may be undefined if MetaMask is not connected.
+      const activeWallet = (isConnected && connectedAddress) ? connectedAddress.toLowerCase() : undefined;
+
       let newSession: DemoSession;
       switch (loginRole) {
         case 'STAFF':
-          newSession = await api.demoLogin('STAFF', loginUsername.trim(), loginPassword);
+          newSession = await api.demoLogin('STAFF', loginUsername.trim(), loginPassword, activeWallet);
           break;
         case 'ADMIN':
-          newSession = await api.demoLogin('ADMIN', loginUsername.trim(), loginPassword);
+          newSession = await api.demoLogin('ADMIN', loginUsername.trim(), loginPassword, activeWallet);
           break;
         case 'CUSTOMER':
         default:
-          newSession = await api.demoLogin('CUSTOMER', loginUsername.trim(), loginPassword);
+          newSession = await api.demoLogin('CUSTOMER', loginUsername.trim(), loginPassword, activeWallet);
           break;
       }
       setSession(newSession);
@@ -3348,6 +3364,19 @@ export default function App({ walletButton }: AppProps) {
                 />
                 <span>Show password</span>
               </label>
+
+              {/* MetaMask wallet status banner */}
+              <div className="login-wallet-status">
+                <div className="login-wallet-status__icon">{isConnected ? '🟢' : '⚪'}</div>
+                <div className="login-wallet-status__text">
+                  {isConnected && connectedAddress
+                    ? <><strong>MetaMask connected:</strong> <code>{connectedAddress.slice(0, 8)}...{connectedAddress.slice(-6)}</code> — this wallet will be linked to your session.</>  
+                    : <><strong>MetaMask not connected.</strong> You can still sign in — blockchain features will be unavailable until you connect a wallet.</>}
+                </div>
+                <div className="login-wallet-status__button">
+                  {walletButton}
+                </div>
+              </div>
 
               <div className="login-actions">
                 <button className="login-button login-button--primary" type="submit" disabled={loginLoading}>

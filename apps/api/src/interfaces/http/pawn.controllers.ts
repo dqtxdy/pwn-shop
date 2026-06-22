@@ -47,7 +47,7 @@ export class AuthController {
   @Post('demo-login')
   @Roles() // demoLogin doesn't guard roles
   demoLogin(@Body() dto: DemoLoginDto) {
-    return this.authService.demoLogin(dto.role, dto.userId, dto.password);
+    return this.authService.demoLogin(dto.role, dto.userId, dto.password, dto.walletAddress);
   }
 }
 

@@ -76,7 +76,7 @@ export class AuthService {
     return { accessToken, user };
   }
 
-  async demoLogin(role: UserRole, userIdOption?: string, passwordOption?: string): Promise<{
+  async demoLogin(role: UserRole, userIdOption?: string, passwordOption?: string, walletAddress?: string): Promise<{
     userId: string;
     displayName: string;
     role: UserRole;
@@ -91,35 +91,33 @@ export class AuthService {
       }
     }
 
-    // Use the explicitly provided username/ID, falling back to role defaults only if not provided
+    // Resolve userId — fall back to role defaults only when not explicitly provided
     const userId = userIdOption || (role === UserRole.Customer ? 'customer-1' : role === UserRole.Staff ? 'staff-1' : 'admin-1');
 
-    const wallet = await this.repository.findWalletByUserId(userId);
-    if (!wallet) {
-      throw new UnauthorizedException(`User account "${userId}" not found in database`);
-    }
-    const walletAddress = wallet.address;
-
-    const user = await this.repository.findUserByWallet(walletAddress);
+    // Look up the user record directly by ID (wallet address is no longer hardcoded per account)
+    const user = await this.repository.findUserById(userId);
     if (!user) {
-      throw new UnauthorizedException(`User account "${userId}" has no linked user record`);
+      throw new UnauthorizedException(`User account "${userId}" not found in database`);
     }
 
     if (user.role !== role) {
       throw new UnauthorizedException(`Role mismatch: Account "${userId}" is registered as "${user.role}", not "${role}"`);
     }
 
+    // Normalize the wallet address sent by the frontend (may be undefined if not connected)
+    const normalizedWallet = walletAddress ? walletAddress.toLowerCase() : undefined;
+
     const token = await this.jwtService.signAsync({
       sub: user.id,
       role: user.role,
-      wallet: walletAddress
+      ...(normalizedWallet ? { wallet: normalizedWallet } : {})
     });
 
     return {
       userId: user.id,
       displayName: user.displayName,
       role: user.role,
-      walletAddress,
+      walletAddress: normalizedWallet,
       token
     };
   }

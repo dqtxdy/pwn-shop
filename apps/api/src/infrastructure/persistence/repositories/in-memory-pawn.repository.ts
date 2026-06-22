@@ -438,6 +438,10 @@ export class InMemoryPawnRepository implements PawnRepository {
     return user;
   }
 
+  async findUserById(id: string): Promise<User | undefined> {
+    return this.users.get(id);
+  }
+
   async findUserByWallet(address: string): Promise<User | undefined> {
     const wallet = [...this.wallets.values()].find((candidate) => candidate.address === address.toLowerCase());
     return wallet ? this.users.get(wallet.userId) : undefined;

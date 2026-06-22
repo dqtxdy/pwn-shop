@@ -369,8 +369,8 @@ export const api = {
   createListing: (dto: CreateListingDto) => postJson<Listing | WalletExecutionResponse, CreateListingDto>('/marketplace/listings', dto),
   createLayaway: (dto: CreateLayawayDto) => postJson<Layaway | WalletExecutionResponse, CreateLayawayDto>('/layaways', dto),
   payLayaway: (layawayId: string, dto: PayLayawayDto) => postJson<Layaway | LayawayPaymentResponse, PayLayawayDto>(`/layaways/${layawayId}/pay`, dto),
-  demoLogin: async (role: 'CUSTOMER' | 'STAFF' | 'ADMIN', userId?: string, password?: string) => {
-    const session = await postJson<DemoSession, { role: string; userId?: string; password?: string }>('/auth/demo-login', { role, userId, password });
+  demoLogin: async (role: 'CUSTOMER' | 'STAFF' | 'ADMIN', userId?: string, password?: string, walletAddress?: string) => {
+    const session = await postJson<DemoSession, { role: string; userId?: string; password?: string; walletAddress?: string }>('/auth/demo-login', { role, userId, password, walletAddress });
     setAuthToken(session.token);
     return session;
   },

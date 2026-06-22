@@ -20,6 +20,7 @@ import {
 
 export interface PawnRepository {
   saveUser(user: User): Promise<User>;
+  findUserById(id: string): Promise<User | undefined>;
   findUserByWallet(address: string): Promise<User | undefined>;
   saveWallet(wallet: Wallet): Promise<Wallet>;
   saveKycVerification(verification: KycVerification): Promise<KycVerification>;
