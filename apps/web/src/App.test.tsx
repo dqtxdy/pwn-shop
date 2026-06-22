@@ -74,7 +74,11 @@ const mockFetch = vi.fn();
 global.fetch = mockFetch;
 
 const customerDisplayName = (userId: string) =>
-  userId === 'customer-2' ? 'Demo Customer 2' : 'Demo Customer 1';
+  userId === 'customer-2' ? 'Customer 2' : 'Customer 1';
+
+const selectWorkspace = (role: 'CUSTOMER' | 'STAFF' | 'ADMIN') => {
+  fireEvent.change(screen.getByLabelText('Workspace'), { target: { value: role } });
+};
 
 const renderAndSignIn = async () => {
   render(<App walletButton={<button type="button">Connect Wallet</button>} />);
@@ -107,10 +111,10 @@ describe('App', () => {
         let displayName = customerDisplayName(userId);
         if (role === 'STAFF') {
           userId = 'staff-1';
-          displayName = 'Demo Staff';
+          displayName = 'Validator';
         } else if (role === 'ADMIN') {
           userId = 'admin-1';
-          displayName = 'Demo Admin';
+          displayName = 'Administrator';
         }
         return {
           ok: true,
@@ -332,15 +336,16 @@ describe('App', () => {
     });
   });
 
-  it('supports signing in with the secondary demo button and signing out back to login', async () => {
+  it('supports signing in with the secondary saved-account button and signing out back to login', async () => {
     render(<App walletButton={<button type="button">Connect Wallet</button>} />);
 
+    selectWorkspace('CUSTOMER');
     fireEvent.change(screen.getByLabelText('Username'), { target: { value: '' } });
     fireEvent.change(screen.getByLabelText('Password'), { target: { value: '' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Sign in using demo customer' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Sign in with saved account' }));
 
     await waitFor(() => {
-      expect(screen.getByText('Demo Customer 1')).toBeInTheDocument();
+      expect(screen.getByText('Customer 1')).toBeInTheDocument();
     });
 
     expect(screen.getByText('Customer Workspace')).toBeInTheDocument();
@@ -353,6 +358,32 @@ describe('App', () => {
     });
 
     expect(screen.queryByText('Customer Workspace')).not.toBeInTheDocument();
+  });
+
+  it('supports signing in as staff and routes to the work queue', async () => {
+    render(<App walletButton={<button type="button">Connect Wallet</button>} />);
+
+    selectWorkspace('STAFF');
+    fireEvent.change(screen.getByLabelText('Username'), { target: { value: '' } });
+    fireEvent.change(screen.getByLabelText('Password'), { target: { value: '' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Sign in with saved account' }));
+
+    await waitFor(() => {
+      expect(screen.getByText('Validator Workspace')).toBeInTheDocument();
+      expect(screen.getByText('Work Queue')).toBeInTheDocument();
+    });
+  });
+
+  it('supports signing in as administrator and routes to the admin overview', async () => {
+    render(<App walletButton={<button type="button">Connect Wallet</button>} />);
+
+    selectWorkspace('ADMIN');
+    fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
+
+    await waitFor(() => {
+      expect(screen.getByText('Admin Workspace')).toBeInTheDocument();
+      expect(screen.getByText('Audit Events')).toBeInTheDocument();
+    });
   });
 
   it('keeps Connect Wallet visible in the authenticated workspace header', async () => {
@@ -398,7 +429,7 @@ describe('App', () => {
           ok: true,
           json: async () => ({
             userId: 'customer-1',
-            displayName: 'Demo Customer 1',
+            displayName: 'Customer 1',
             role: 'CUSTOMER',
             walletAddress: '0x70997970C51812dc3A010C7d01b50e0d17dc79C8',
             token: 'mock-jwt-token'
@@ -443,7 +474,7 @@ describe('App', () => {
           ok: true,
           json: async () => ({
             userId: 'customer-1',
-            displayName: 'Demo Customer 1',
+            displayName: 'Customer 1',
             role: 'CUSTOMER',
             walletAddress: '0x70997970C51812dc3A010C7d01b50e0d17dc79C8',
             token: 'mock-jwt-token'
@@ -501,7 +532,7 @@ describe('App', () => {
           ok: true,
           json: async () => ({
             userId: 'customer-1',
-            displayName: 'Demo Customer 1',
+            displayName: 'Customer 1',
             role: 'CUSTOMER',
             walletAddress: '0x70997970C51812dc3A010C7d01b50e0d17dc79C8',
             token: 'mock-jwt-token'

@@ -45,7 +45,9 @@ import {
   formatId,
   getStatusIndicator,
   pageLabelMap,
-  roleLabels
+  roleLabels,
+  roleSelectOptions,
+  workspaceHomeHref
 } from './workspaceConfig';
 import {
   createAppraisalEvidenceUri,
@@ -86,10 +88,11 @@ export default function App({ walletButton }: AppProps) {
   const [loading, setLoading] = useState(true);
   const [loginLoading, setLoginLoading] = useState(false);
   const [loginError, setLoginError] = useState('');
-  const [accountId, setAccountId] = useState('pawnshop-demo');
+  const [loginRole, setLoginRole] = useState<DemoSession['role']>('CUSTOMER');
+  const [accountId, setAccountId] = useState('pawnshop-protocol');
   const [rememberAccount, setRememberAccount] = useState(true);
   const [loginUsername, setLoginUsername] = useState('customer-1');
-  const [loginPassword, setLoginPassword] = useState('demo-password');
+  const [loginPassword, setLoginPassword] = useState('workspace-password');
   const [showPassword, setShowPassword] = useState(false);
 
   // Layout navigation states
@@ -137,6 +140,20 @@ export default function App({ walletButton }: AppProps) {
   const [selectedFracAsset, setSelectedFracAsset] = useState<FractionalAsset | null>(null);
   const [buySharesCount, setBuySharesCount] = useState('1');
   const [isBuyFractionsModalVisible, setIsBuyFractionsModalVisible] = useState(false);
+
+  const applyLoginRoleDefaults = (role: DemoSession['role']) => {
+    const defaultUsernames: Record<DemoSession['role'], string> = {
+      CUSTOMER: 'customer-1',
+      STAFF: 'staff-1',
+      ADMIN: 'admin-1'
+    };
+
+    setLoginRole(role);
+    setAccountId('pawnshop-protocol');
+    setLoginUsername(defaultUsernames[role]);
+    setLoginPassword('workspace-password');
+    setLoginError('');
+  };
 
   const onSubmitFractionalize = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -564,20 +581,35 @@ export default function App({ walletButton }: AppProps) {
     setLoginError('');
 
     if (!allowEmptyCredentials && (!loginUsername.trim() || !loginPassword.trim())) {
-      setLoginError('Enter a username and password to continue.');
+      setLoginError('Enter a workspace username and password to continue.');
       return;
     }
 
     setLoginLoading(true);
     try {
-      const newSession = await api.demoLogin('CUSTOMER', 'customer-1');
+      let newSession: DemoSession;
+      switch (loginRole) {
+        case 'STAFF':
+          newSession = await api.demoLogin('STAFF');
+          break;
+        case 'ADMIN':
+          newSession = await api.demoLogin('ADMIN');
+          break;
+        case 'CUSTOMER':
+        default:
+          newSession = await api.demoLogin(
+            'CUSTOMER',
+            loginUsername.trim() === 'customer-2' ? 'customer-2' : 'customer-1'
+          );
+          break;
+      }
       setSession(newSession);
       setNotifications([]);
       setSelectedAsset(null);
-      setActiveHref('#overview');
+      setActiveHref(workspaceHomeHref[newSession.role]);
       await loadData(newSession);
     } catch (err: any) {
-      setLoginError(err.message || 'Failed to sign in with the demo account.');
+      setLoginError(err.message || 'Failed to sign in. Please try again.');
     } finally {
       setLoginLoading(false);
     }
@@ -596,8 +628,10 @@ export default function App({ walletButton }: AppProps) {
     setActiveHref('#overview');
     setLoading(false);
     setLoginError('');
+    setLoginRole('CUSTOMER');
+    setAccountId('pawnshop-protocol');
     setLoginUsername('customer-1');
-    setLoginPassword('demo-password');
+    setLoginPassword('workspace-password');
     setShowPassword(false);
   };
 
@@ -2833,17 +2867,23 @@ export default function App({ walletButton }: AppProps) {
   if (!session) {
     return (
       <div className="login-shell">
-        <div className="login-brand">
-          <div className="login-brand__mark">P</div>
-          <div className="login-brand__text">PawnShop Protocol</div>
+        <div className="login-shell__decor login-shell__decor--left" aria-hidden="true" />
+        <div className="login-shell__decor login-shell__decor--right" aria-hidden="true" />
+
+        <div className="login-topbar">
+          <div className="login-brand" aria-label="PawnShop Protocol">
+            <div className="login-brand__mark">P</div>
+            <div className="login-brand__text">PawnShop Protocol</div>
+          </div>
+          <div className="login-topbar__meta">Secure workspace access</div>
         </div>
 
-        <div className="login-layout">
-          <div className="login-card">
+        <div className="login-stage">
+          <section className="login-card">
             <div className="login-card__header">
-              <div className="login-card__eyebrow">Customer access</div>
+              <div className="login-card__eyebrow">Workspace access</div>
               <h1>PawnShop Protocol sign in</h1>
-              <p>Use the demo customer workspace to manage custody, marketplace, and wallet actions.</p>
+              <p>Use your workspace account to manage custody, marketplace, and wallet actions.</p>
             </div>
 
             {loginError ? (
@@ -2860,11 +2900,26 @@ export default function App({ walletButton }: AppProps) {
               }}
             >
               <label className="login-field">
+                <span>Workspace</span>
+                <select
+                  className="login-select"
+                  value={loginRole}
+                  onChange={(event) => applyLoginRoleDefaults(event.target.value as DemoSession['role'])}
+                >
+                  {roleSelectOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="login-field">
                 <span>Account ID or alias</span>
                 <input
                   value={accountId}
                   onChange={(event) => setAccountId(event.target.value)}
-                  placeholder="pawnshop-demo"
+                  placeholder="pawnshop-protocol"
                 />
               </label>
 
@@ -2915,7 +2970,7 @@ export default function App({ walletButton }: AppProps) {
                   disabled={loginLoading}
                   onClick={() => void handleLogin({ allowEmptyCredentials: true })}
                 >
-                  Sign in using demo customer
+                  Sign in with saved account
                 </button>
               </div>
 
@@ -2923,34 +2978,24 @@ export default function App({ walletButton }: AppProps) {
                 className="login-inline-link"
                 type="button"
                 onClick={() => {
-                  setAccountId('pawnshop-demo');
-                  setLoginUsername('customer-1');
-                  setLoginPassword('demo-password');
-                  setLoginError('');
+                  applyLoginRoleDefaults(loginRole);
                 }}
               >
-                Create a demo account
+                Create account
               </button>
             </form>
-          </div>
+          </section>
 
-          <aside className="login-promo">
-            <div className="login-promo__badge">Pawn-backed liquidity</div>
-            <h2>Physical asset finance, backed by blockchain</h2>
-            <p>Pawn, list, buy, and fractionalize authenticated assets in one workspace.</p>
+          <aside className="login-promo" aria-label="Workspace announcement">
             <div className="login-promo__panel">
-              <div>
-                <strong>Custody</strong>
-                <span>Tracked intake, appraisal, and release milestones.</span>
+              <div className="login-promo__badge">Workspace update</div>
+              <div className="login-promo__art" aria-hidden="true">
+                <span />
+                <span />
+                <span />
               </div>
-              <div>
-                <strong>Marketplace</strong>
-                <span>Consignment, layaway, and fraction sales in one ledger.</span>
-              </div>
-              <div>
-                <strong>Wallet-ready</strong>
-                <span>Keep Web3 actions close to the operating workflow after sign in.</span>
-              </div>
+              <h2>Physical asset finance, backed by blockchain</h2>
+              <p>Pawn, list, buy, and fractionalize authenticated assets in one workspace.</p>
             </div>
           </aside>
         </div>
