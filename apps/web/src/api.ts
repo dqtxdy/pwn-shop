@@ -269,6 +269,16 @@ export interface PayLayawayDto {
   txHash?: string;
 }
 
+export interface CreateDisputeDto {
+  assetId: string;
+  openedBy?: string;
+  evidenceExportUri: string;
+}
+
+export interface ResolveDisputeDto {
+  resolution: string;
+}
+
 export interface WalletAction {
   to: string;
   calldata: string;
@@ -349,16 +359,18 @@ export const api = {
   fetchMarketplace: () => getJson<Listing[]>('/marketplace'),
   createAsset: (dto: CreateAssetDto) => postJson<Asset, CreateAssetDto>('/assets', dto),
   uploadEvidence: (dto: UploadEvidenceDto) => postJson<EvidenceFile, UploadEvidenceDto>('/evidence', dto),
+  fetchEvidence: (assetId: string) => getJson<EvidenceFile[]>(`/evidence/${assetId}`),
   createShipment: (dto: CreateShipmentDto) => postJson<Shipment, CreateShipmentDto>('/shipments', dto),
   createAppraisal: (dto: CreateAppraisalDto) => postJson<Appraisal, CreateAppraisalDto>('/appraisals', dto),
   createLoanOffer: (dto: CreateLoanOfferDto) => postJson<Loan, CreateLoanOfferDto>('/loans', dto),
   acceptLoan: (loanId: string, dto: AcceptLoanDto) => postJson<Loan | WalletExecutionResponse, AcceptLoanDto>(`/loans/${loanId}/accept`, dto),
+  rejectLoan: (loanId: string) => postJson<Loan, Record<string, never>>(`/loans/${loanId}/reject`, {}),
   recordRepayment: (dto: RecordRepaymentDto) => postJson<Repayment, RecordRepaymentDto>('/repayments', dto),
   createListing: (dto: CreateListingDto) => postJson<Listing | WalletExecutionResponse, CreateListingDto>('/marketplace/listings', dto),
   createLayaway: (dto: CreateLayawayDto) => postJson<Layaway | WalletExecutionResponse, CreateLayawayDto>('/layaways', dto),
   payLayaway: (layawayId: string, dto: PayLayawayDto) => postJson<Layaway | LayawayPaymentResponse, PayLayawayDto>(`/layaways/${layawayId}/pay`, dto),
-  demoLogin: async (role: 'CUSTOMER' | 'STAFF' | 'ADMIN', userId?: string) => {
-    const session = await postJson<DemoSession, { role: string; userId?: string }>('/auth/demo-login', { role, userId });
+  demoLogin: async (role: 'CUSTOMER' | 'STAFF' | 'ADMIN', userId?: string, password?: string) => {
+    const session = await postJson<DemoSession, { role: string; userId?: string; password?: string }>('/auth/demo-login', { role, userId, password });
     setAuthToken(session.token);
     return session;
   },
@@ -368,7 +380,9 @@ export const api = {
   buyFractions: (dto: BuyFractionsDto) => postJson<FractionalAsset | WalletExecutionResponse, BuyFractionsDto>('/fractions/buy', dto),
   redeemAsset: (dto: RedeemAssetDto) => postJson<FractionalAsset | WalletExecutionResponse, RedeemAssetDto>('/fractions/redeem', dto),
   fetchFractionalAssets: () => getJson<FractionalAsset[]>('/fractions/assets'),
-  fetchFractionalPositions: (userId: string) => getJson<FractionalPosition[]>(`/fractions/positions/${userId}`)
+  fetchFractionalPositions: (userId: string) => getJson<FractionalPosition[]>(`/fractions/positions/${userId}`),
+  createDispute: (dto: CreateDisputeDto) => postJson<Dispute, CreateDisputeDto>('/disputes', dto),
+  resolveDispute: (id: string, dto: ResolveDisputeDto) => postJson<Dispute, ResolveDisputeDto>(`/disputes/${id}/resolve`, dto)
 };
 
 export const clearAuthToken = () => {

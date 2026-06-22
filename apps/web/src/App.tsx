@@ -37,7 +37,8 @@ import type {
   BlockchainHealth,
   FractionalAsset,
   FractionalPosition,
-  LayawayPaymentResponse
+  LayawayPaymentResponse,
+  EvidenceFile
 } from './api';
 import { useAccount, useSendTransaction, useWriteContract, usePublicClient } from 'wagmi';
 import { workflowSteps } from './mockData';
@@ -54,6 +55,38 @@ import {
   createLocalTransactionHash,
   createNotificationId
 } from './workflowUtils';
+
+const ProductImage = ({ assetId }: { assetId: string }) => {
+  const [imgUrl, setImgUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    void api.fetchEvidence(assetId).then((evs) => {
+      if (!active) return;
+      const imageEv = evs.find((e) => e.uri.startsWith('data:image/') || e.uri.includes('mock-storage') || e.uri.includes('local-object') || e.uri.startsWith('data:video/'));
+      if (imageEv) {
+        setImgUrl(imageEv.uri);
+      }
+    }).catch(() => null);
+    return () => {
+      active = false;
+    };
+  }, [assetId]);
+
+  if (!imgUrl) {
+    return <div style={{ width: '50px', height: '50px', borderRadius: '4px', background: '#eaedd9', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#5f6b7a', fontSize: '9px' }}>No Image</div>;
+  }
+
+  if (imgUrl.startsWith('mock-object') || imgUrl.startsWith('local-object')) {
+    return <div className="product-image-fallback" style={{ width: '50px', height: '50px', borderRadius: '4px', background: '#ff9900', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 'bold', fontSize: '10px' }}>NFT</div>;
+  }
+
+  if (imgUrl.startsWith('data:video/')) {
+    return <video src={imgUrl} style={{ width: '50px', height: '50px', objectFit: 'cover', borderRadius: '4px', border: '1px solid #d5dbdb' }} />;
+  }
+
+  return <img src={imgUrl} alt="Product" style={{ width: '50px', height: '50px', objectFit: 'cover', borderRadius: '4px', border: '1px solid #d5dbdb' }} />;
+};
 
 type AppProps = {
   walletButton: ReactNode;
@@ -118,6 +151,31 @@ export default function App({ walletButton }: AppProps) {
   const [pawnRequestedAmount, setPawnRequestedAmount] = useState('');
   const [pawnDescription, setPawnDescription] = useState('');
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+
+  // Evidence States
+  const [evidenceList, setEvidenceList] = useState<EvidenceFile[]>([]);
+  const [loadingEvidence, setLoadingEvidence] = useState(false);
+
+  // Marketplace Detailed Image Modal State
+  const [isMarketplaceDetailVisible, setIsMarketplaceDetailVisible] = useState(false);
+  const [selectedMarketplaceListing, setSelectedMarketplaceListing] = useState<Listing | null>(null);
+  const [marketplaceDetailEvidence, setMarketplaceDetailEvidence] = useState<EvidenceFile[]>([]);
+
+  // Admin Dispute Resolution Modal
+  const [isResolveDisputeModalVisible, setIsResolveDisputeModalVisible] = useState(false);
+  const [disputeAssetId, setDisputeAssetId] = useState('');
+  const [disputeId, setDisputeId] = useState('');
+  const [resolutionText, setResolutionText] = useState('');
+  const [submittingResolution, setSubmittingResolution] = useState(false);
+
+  // Admin Asset Inventory State
+  const [selectedAdminAsset, setSelectedAdminAsset] = useState<Asset | null>(null);
+
+  // Staff Unboxing Modal
+  const [isUnboxingModalVisible, setIsUnboxingModalVisible] = useState(false);
+  const [unboxingAssetId, setUnboxingAssetId] = useState('');
+  const [unboxingFiles, setUnboxingFiles] = useState<File[]>([]);
+  const [submittingUnboxing, setSubmittingUnboxing] = useState(false);
 
   // Appraisals Form
   const [appraisalAssetId, setAppraisalAssetId] = useState('');
@@ -565,6 +623,59 @@ export default function App({ walletButton }: AppProps) {
     }
   };
 
+  const loadEvidenceForAsset = async (assetId: string) => {
+    setLoadingEvidence(true);
+    try {
+      const list = await api.fetchEvidence(assetId);
+      setEvidenceList(list);
+    } catch {
+      setEvidenceList([]);
+    } finally {
+      setLoadingEvidence(false);
+    }
+  };
+
+  useEffect(() => {
+    const targetAsset = selectedAsset || selectedStaffAsset || selectedAdminAsset;
+    if (targetAsset) {
+      void loadEvidenceForAsset(targetAsset.id);
+    } else {
+      setEvidenceList([]);
+    }
+  }, [selectedAsset, selectedStaffAsset, selectedAdminAsset]);
+
+  const handleOpenResolveDisputeModal = (assetId: string) => {
+    const dispute = dashboard?.disputes.find(d => d.assetId === assetId && d.status === 'OPEN');
+    if (!dispute) {
+      addNotification('warning', 'No open dispute found for this asset');
+      return;
+    }
+    setDisputeAssetId(assetId);
+    setDisputeId(dispute.id);
+    setResolutionText('');
+    setIsResolveDisputeModalVisible(true);
+  };
+
+  const onSubmitResolveDispute = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!session || !disputeId) return;
+    if (!resolutionText.trim()) {
+      addNotification('error', 'Please enter a resolution description');
+      return;
+    }
+    setSubmittingResolution(true);
+    try {
+      await api.resolveDispute(disputeId, { resolution: resolutionText.trim() });
+      addNotification('success', 'Dispute resolved successfully.');
+      setIsResolveDisputeModalVisible(false);
+      await loadData();
+    } catch (err: any) {
+      addNotification('error', err.message || 'Failed to resolve dispute');
+    } finally {
+      setSubmittingResolution(false);
+    }
+  };
+
   useEffect(() => {
     setLoading(false);
   }, []);
@@ -590,17 +701,14 @@ export default function App({ walletButton }: AppProps) {
       let newSession: DemoSession;
       switch (loginRole) {
         case 'STAFF':
-          newSession = await api.demoLogin('STAFF');
+          newSession = await api.demoLogin('STAFF', loginUsername.trim(), loginPassword);
           break;
         case 'ADMIN':
-          newSession = await api.demoLogin('ADMIN');
+          newSession = await api.demoLogin('ADMIN', loginUsername.trim(), loginPassword);
           break;
         case 'CUSTOMER':
         default:
-          newSession = await api.demoLogin(
-            'CUSTOMER',
-            loginUsername.trim() === 'customer-2' ? 'customer-2' : 'customer-1'
-          );
+          newSession = await api.demoLogin('CUSTOMER', loginUsername.trim(), loginPassword);
           break;
       }
       setSession(newSession);
@@ -786,6 +894,23 @@ export default function App({ walletButton }: AppProps) {
       await loadData();
     } catch (err: any) {
       addNotification('error', err.message || 'Failed to accept loan');
+    } finally {
+      setActionLoadingId(null);
+    }
+  };
+
+  const handleRejectLoan = async (loanId: string) => {
+    if (!session) {
+      addNotification('error', 'No active session found');
+      return;
+    }
+    setActionLoadingId(loanId);
+    try {
+      await api.rejectLoan(loanId);
+      addNotification('success', 'Loan offer rejected successfully. The asset has been returned to received status.');
+      await loadData();
+    } catch (err: any) {
+      addNotification('error', err.message || 'Failed to reject loan offer');
     } finally {
       setActionLoadingId(null);
     }
@@ -988,25 +1113,64 @@ export default function App({ walletButton }: AppProps) {
     }
   };
 
-  const handleUploadUnboxingProof = async (assetId: string) => {
-    if (!session) {
-      addNotification('error', 'No active session found');
+  const handleOpenMarketplaceDetail = async (listing: Listing) => {
+    setSelectedMarketplaceListing(listing);
+    setIsMarketplaceDetailVisible(true);
+    setMarketplaceDetailEvidence([]);
+    try {
+      const evs = await api.fetchEvidence(listing.assetId);
+      setMarketplaceDetailEvidence(evs);
+    } catch (err) {
+      console.error('Failed to load marketplace item evidence', err);
+    }
+  };
+
+  const handleOpenUnboxingModal = (assetId: string) => {
+    setUnboxingAssetId(assetId);
+    setUnboxingFiles([]);
+    setIsUnboxingModalVisible(true);
+  };
+
+  const onSubmitUnboxingProof = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!session || !unboxingAssetId) return;
+    if (unboxingFiles.length === 0) {
+      addNotification('error', 'Please choose at least one file as unboxing proof');
       return;
     }
-    setActionLoadingId(assetId);
+
+    setSubmittingUnboxing(true);
     try {
-      await api.uploadEvidence({
-        assetId,
-        kind: 'STAFF_UNBOXING',
-        fileName: 'unboxing_cam_4.mp4',
-        bytesBase64: 'dW5ib3hpbmctdmlkZW8='
+      const file = unboxingFiles[0];
+      const reader = new FileReader();
+
+      const base64Promise = new Promise<string>((resolve, reject) => {
+        reader.onload = () => {
+          const result = reader.result as string;
+          const base64Data = result.split(',')[1];
+          resolve(base64Data);
+        };
+        reader.onerror = (error) => reject(error);
       });
+
+      reader.readAsDataURL(file);
+      const bytesBase64 = await base64Promise;
+
+      await api.uploadEvidence({
+        assetId: unboxingAssetId,
+        kind: 'STAFF_UNBOXING',
+        fileName: file.name,
+        bytesBase64
+      });
+
       addNotification('success', 'Unboxing proof recorded. Asset received.');
+      setIsUnboxingModalVisible(false);
+      setUnboxingFiles([]);
       await loadData();
     } catch (err: any) {
       addNotification('error', err.message || 'Failed to upload unboxing proof');
     } finally {
-      setActionLoadingId(null);
+      setSubmittingUnboxing(false);
     }
   };
 
@@ -1401,6 +1565,7 @@ export default function App({ walletButton }: AppProps) {
           text: 'Governance',
           items: [
             { type: 'link' as const, text: 'Overview', href: '#admin-overview' },
+            { type: 'link' as const, text: 'Asset Inventory & Evidence', href: '#admin-assets' },
             { type: 'link' as const, text: 'Audit Events', href: '#audit-events' },
             { type: 'link' as const, text: 'Risk Parameters', href: '#risk-parameters' }
           ]
@@ -1816,13 +1981,47 @@ export default function App({ walletButton }: AppProps) {
                       )}
 
                       {selectedAsset.status === 'OFFER_ISSUED' && selectedAssetOfferedLoan && (
-                        <Button
-                          variant="primary"
-                          loading={actionLoadingId === selectedAssetOfferedLoan.id}
-                          onClick={() => handleAcceptLoan(selectedAssetOfferedLoan.id)}
-                        >
-                          Accept Loan Offer
-                        </Button>
+                        <Container header={<Header variant="h3">Loan Offer Details</Header>}>
+                          <SpaceBetween size="m">
+                            <ColumnLayout columns={2}>
+                              <div>
+                                <Box variant="awsui-key-label">Principal (Loan Amount)</Box>
+                                <Box variant="p"><strong>{selectedAssetOfferedLoan.principal} USDC</strong></Box>
+                              </div>
+                              <div>
+                                <Box variant="awsui-key-label">Duration</Box>
+                                <Box variant="p">{selectedAssetOfferedLoan.durationDays} Days</Box>
+                              </div>
+                              <div>
+                                <Box variant="awsui-key-label">Interest APR</Box>
+                                <Box variant="p">{selectedAssetOfferedLoan.aprBps / 100}% APR</Box>
+                              </div>
+                              <div>
+                                <Box variant="awsui-key-label">Estimated Interest</Box>
+                                <Box variant="p">
+                                  {((selectedAssetOfferedLoan.principal * (selectedAssetOfferedLoan.aprBps / 10000) * selectedAssetOfferedLoan.durationDays) / 365).toFixed(2)} USDC
+                                </Box>
+                              </div>
+                            </ColumnLayout>
+
+                            <SpaceBetween direction="horizontal" size="xs">
+                              <Button
+                                variant="primary"
+                                loading={actionLoadingId === selectedAssetOfferedLoan.id}
+                                onClick={() => handleAcceptLoan(selectedAssetOfferedLoan.id)}
+                              >
+                                Accept Loan Offer
+                              </Button>
+                              <Button
+                                variant="normal"
+                                loading={actionLoadingId === selectedAssetOfferedLoan.id}
+                                onClick={() => handleRejectLoan(selectedAssetOfferedLoan.id)}
+                              >
+                                Reject Offer
+                              </Button>
+                            </SpaceBetween>
+                          </SpaceBetween>
+                        </Container>
                       )}
 
                       {['RECEIVED', 'RETURNED'].includes(selectedAsset.status) && !isListed && (
@@ -1849,6 +2048,32 @@ export default function App({ walletButton }: AppProps) {
                         </Container>
                       )}
                     </SpaceBetween>
+
+                    {evidenceList.filter((ev) => ev.kind === 'CUSTOMER_PRE_SHIPMENT').length > 0 && (
+                      <div className="detail-divider">
+                        <Box variant="h4" padding={{ bottom: 's' }}>Uploaded Evidence Documents</Box>
+                        <SpaceBetween size="m" direction="vertical">
+                          {evidenceList.filter((ev) => ev.kind === 'CUSTOMER_PRE_SHIPMENT').map((ev) => (
+                            <div key={ev.id} className="evidence-preview-container" style={{ border: '1px solid #d5dbdb', borderRadius: '8px', padding: '12px', background: '#f8f9f9', marginBottom: '12px' }}>
+                              <Box variant="awsui-key-label" padding={{ bottom: 'xs' }}>
+                                {ev.kind === 'CUSTOMER_PRE_SHIPMENT' ? 'Customer Pre-shipment' : 'Staff Unboxing'} - {new Date(ev.capturedAt).toLocaleString()}
+                              </Box>
+                              <div className="evidence-media-wrapper" style={{ marginTop: '6px', display: 'flex', justifyContent: 'center' }}>
+                                {ev.uri.startsWith('data:image/') ? (
+                                  <img src={ev.uri} alt="Evidence" style={{ maxWidth: '100%', maxHeight: '240px', borderRadius: '4px', border: '1px solid #d5dbdb' }} />
+                                ) : ev.uri.startsWith('data:video/') ? (
+                                  <video src={ev.uri} controls style={{ maxWidth: '100%', maxHeight: '240px', borderRadius: '4px', border: '1px solid #d5dbdb' }} />
+                                ) : (
+                                  <Box color="text-body-secondary">
+                                    Document content addressing hash: <code>{ev.contentHash.slice(0, 16)}...</code>
+                                  </Box>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                        </SpaceBetween>
+                      </div>
+                    )}
 
                     <div className="detail-divider">
                       <Box variant="h4">Workflow Traceability</Box>
@@ -1907,11 +2132,32 @@ export default function App({ walletButton }: AppProps) {
                         minWidth: 120
                       },
                       {
+                        id: 'image',
+                        header: 'Image',
+                        cell: (item) => (
+                          <div
+                            onClick={() => handleOpenMarketplaceDetail(item)}
+                            style={{ cursor: 'pointer' }}
+                            title="Click to view details"
+                          >
+                            <ProductImage assetId={item.assetId} />
+                          </div>
+                        ),
+                        minWidth: 80
+                      },
+                      {
                         id: 'asset',
                         header: 'Asset',
                         cell: (item) => {
                           const asset = dashboard?.assets.find((a) => a.id === item.assetId);
-                          return asset ? `${asset.title} (${asset.category})` : item.assetId;
+                          return (
+                            <Button
+                              variant="link"
+                              onClick={() => handleOpenMarketplaceDetail(item)}
+                            >
+                              {asset ? `${asset.title} (${asset.category})` : item.assetId}
+                            </Button>
+                          );
                         },
                         minWidth: 260
                       },
@@ -2141,37 +2387,6 @@ export default function App({ walletButton }: AppProps) {
                             return 'Vault verified';
                           },
                           minWidth: 180
-                        },
-                        {
-                          id: 'actions',
-                          header: 'Actions Required / Queue Status',
-                          cell: (item) => (
-                            <SpaceBetween direction="horizontal" size="xs">
-                              {item.status === 'IN_TRANSIT' && (
-                                <Button
-                                  variant="primary"
-                                  loading={actionLoadingId === item.id}
-                                  onClick={() => handleUploadUnboxingProof(item.id)}
-                                >
-                                  Upload Unboxing Proof
-                                </Button>
-                              )}
-                              {['RECEIVED', 'UNDER_APPRAISAL'].includes(item.status) && (
-                                <Button
-                                  onClick={() => {
-                                    setAppraisalAssetId(item.id);
-                                    setActiveHref('#appraisals');
-                                    addNotification('info', `Selected ${item.id} for appraisal`);
-                                  }}
-                                >
-                                  Select for Appraisal
-                                </Button>
-                              )}
-                              {item.status === 'OFFER_ISSUED' && <Badge color="blue">Offer Pending Customer</Badge>}
-                              {item.status === 'LOAN_ACTIVE' && <Badge color="green">Active Custody</Badge>}
-                              {item.status === 'RETURNED' && <Badge color="grey">Returned</Badge>}
-                            </SpaceBetween>
-                          )
                         }
                       ]}
                       items={dashboard?.assets ?? []}
@@ -2240,6 +2455,55 @@ export default function App({ walletButton }: AppProps) {
                           "Asset returned. No action needed."
                         )}
                       </Alert>
+
+                      {selectedStaffAsset.status === 'IN_TRANSIT' && (
+                        <Button
+                          variant="primary"
+                          loading={submittingUnboxing && unboxingAssetId === selectedStaffAsset.id}
+                          onClick={() => handleOpenUnboxingModal(selectedStaffAsset.id)}
+                        >
+                          Upload Unboxing Proof
+                        </Button>
+                      )}
+
+                      {['RECEIVED', 'UNDER_APPRAISAL'].includes(selectedStaffAsset.status) && (
+                        <Button
+                          variant="primary"
+                          onClick={() => {
+                            setAppraisalAssetId(selectedStaffAsset.id);
+                            setActiveHref('#appraisals');
+                            addNotification('info', `Selected ${selectedStaffAsset.id} for appraisal`);
+                          }}
+                        >
+                          Select for Appraisal
+                        </Button>
+                      )}
+
+                      {evidenceList.filter((ev) => ev.kind === 'STAFF_UNBOXING').length > 0 && (
+                        <div style={{ marginTop: '16px', paddingTop: '16px', borderTop: '1px solid #d5dbdb' }}>
+                          <Box variant="h4" padding={{ bottom: 's' }}>Uploaded Evidence Documents</Box>
+                          <SpaceBetween size="m" direction="vertical">
+                            {evidenceList.filter((ev) => ev.kind === 'STAFF_UNBOXING').map((ev) => (
+                              <div key={ev.id} className="evidence-preview-container" style={{ border: '1px solid #d5dbdb', borderRadius: '8px', padding: '12px', background: '#f8f9f9', marginBottom: '12px' }}>
+                                <Box variant="awsui-key-label" padding={{ bottom: 'xs' }}>
+                                  {ev.kind === 'CUSTOMER_PRE_SHIPMENT' ? 'Customer Pre-shipment' : 'Staff Unboxing'} - {new Date(ev.capturedAt).toLocaleString()}
+                                </Box>
+                                <div className="evidence-media-wrapper" style={{ marginTop: '6px', display: 'flex', justifyContent: 'center' }}>
+                                  {ev.uri.startsWith('data:image/') ? (
+                                    <img src={ev.uri} alt="Evidence" style={{ maxWidth: '100%', maxHeight: '200px', borderRadius: '4px', border: '1px solid #d5dbdb' }} />
+                                  ) : ev.uri.startsWith('data:video/') ? (
+                                    <video src={ev.uri} controls style={{ maxWidth: '100%', maxHeight: '200px', borderRadius: '4px', border: '1px solid #d5dbdb' }} />
+                                  ) : (
+                                    <Box color="text-body-secondary">
+                                      Document content addressing hash: <code>{ev.contentHash.slice(0, 16)}...</code>
+                                    </Box>
+                                  )}
+                                </div>
+                              </div>
+                            ))}
+                          </SpaceBetween>
+                        </div>
+                      )}
                     </SpaceBetween>
                   ) : (
                     <div className="detail-empty-state">
@@ -2609,6 +2873,131 @@ export default function App({ walletButton }: AppProps) {
                 </SpaceBetween>
               </div>
             </SpaceBetween>
+          );
+
+        case '#admin-assets':
+          return (
+            <div className="two-column-layout">
+              <Container header={<Header variant="h2">All System Assets</Header>}>
+                <div className="demo-table-wrapper">
+                  <Table
+                    variant="embedded"
+                    contentDensity="compact"
+                    columnDefinitions={[
+                      {
+                        id: 'id',
+                        header: 'Asset ID',
+                        cell: (item) => (
+                          <code className="asset-id-code" title={item.id}>
+                            {formatId(item.id)}
+                          </code>
+                        ),
+                        minWidth: 120
+                      },
+                      {
+                        id: 'image',
+                        header: 'Image',
+                        cell: (item) => <ProductImage assetId={item.id} />,
+                        minWidth: 80
+                      },
+                      { id: 'title', header: 'Asset Name', cell: (item) => item.title, minWidth: 200 },
+                      { id: 'status', header: 'Status', cell: (item) => getStatusIndicator(item.status), minWidth: 150 },
+                      { id: 'value', header: 'Declared Value', cell: (item) => <span className="numeric-cell">{item.declaredValue} USDC</span>, minWidth: 120 }
+                    ]}
+                    items={dashboard?.assets ?? []}
+                    selectedItems={selectedAdminAsset ? [selectedAdminAsset] : []}
+                    onSelectionChange={({ detail }) => setSelectedAdminAsset(detail.selectedItems[0])}
+                    onRowClick={({ detail }) => setSelectedAdminAsset(detail.item)}
+                    selectionType="single"
+                    trackBy="id"
+                    empty="No assets found in the system."
+                  />
+                </div>
+              </Container>
+
+              <Container header={<Header variant="h2">Asset Administration</Header>}>
+                {selectedAdminAsset ? (
+                  <SpaceBetween size="m">
+                    <div>
+                      <Box variant="h3">{selectedAdminAsset.title}</Box>
+                      <Box variant="small" color="text-body-secondary">{selectedAdminAsset.id}</Box>
+                    </div>
+
+                    <div className="custody-info-panel">
+                      <div className="custody-info-item">
+                        <span className="custody-info-label">Status</span>
+                        <span className="custody-info-value">{getStatusIndicator(selectedAdminAsset.status)}</span>
+                      </div>
+                      <div className="custody-info-item">
+                        <span className="custody-info-label">Owner ID</span>
+                        <span className="custody-info-value">{selectedAdminAsset.ownerId}</span>
+                      </div>
+                      <div className="custody-info-item">
+                        <span className="custody-info-label">Declared Value</span>
+                        <span className="custody-info-value">{selectedAdminAsset.declaredValue} USDC</span>
+                      </div>
+                    </div>
+
+                    <SpaceBetween direction="horizontal" size="xs">
+                      {selectedAdminAsset.status === 'DISPUTED' && (
+                        <Button
+                          variant="primary"
+                          onClick={() => handleOpenResolveDisputeModal(selectedAdminAsset.id)}
+                        >
+                          Resolve Dispute
+                        </Button>
+                      )}
+                      
+                      {['RECEIVED', 'RETURNED'].includes(selectedAdminAsset.status) && !marketplace.some((m) => m.assetId === selectedAdminAsset.id && m.status === 'ACTIVE') && (
+                        <Button
+                          variant="primary"
+                          onClick={() => handleListAsset(selectedAdminAsset.id)}
+                        >
+                          List on Marketplace
+                        </Button>
+                      )}
+                    </SpaceBetween>
+
+                    {evidenceList.length > 0 ? (
+                      <div style={{ marginTop: '16px', paddingTop: '16px', borderTop: '1px solid #d5dbdb' }}>
+                        <Box variant="h4" padding={{ bottom: 's' }}>Uploaded Evidence (Customer & Staff)</Box>
+                        <SpaceBetween size="m" direction="vertical">
+                          {evidenceList.map((ev) => (
+                            <div key={ev.id} className="evidence-preview-container" style={{ border: '1px solid #d5dbdb', borderRadius: '8px', padding: '12px', background: '#f8f9f9', marginBottom: '12px' }}>
+                              <Box variant="awsui-key-label" padding={{ bottom: 'xs' }}>
+                                {ev.kind === 'CUSTOMER_PRE_SHIPMENT' ? 'Customer Pre-shipment' : ev.kind === 'STAFF_UNBOXING' ? 'Staff Unboxing' : 'Dispute Evidence'} - {new Date(ev.capturedAt).toLocaleString()}
+                              </Box>
+                              <div className="evidence-media-wrapper" style={{ marginTop: '6px', display: 'flex', justifyContent: 'center' }}>
+                                {ev.uri.startsWith('data:image/') ? (
+                                  <img src={ev.uri} alt="Evidence" style={{ maxWidth: '100%', maxHeight: '200px', borderRadius: '4px', border: '1px solid #d5dbdb' }} />
+                                ) : ev.uri.startsWith('data:video/') ? (
+                                  <video src={ev.uri} controls style={{ maxWidth: '100%', maxHeight: '200px', borderRadius: '4px', border: '1px solid #d5dbdb' }} />
+                                ) : (
+                                  <Box color="text-body-secondary">
+                                    Document content addressing hash: <code>{ev.contentHash.slice(0, 16)}...</code>
+                                  </Box>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                        </SpaceBetween>
+                      </div>
+                    ) : (
+                      <div style={{ marginTop: '16px', paddingTop: '16px', borderTop: '1px solid #d5dbdb' }}>
+                        <Box variant="p" color="text-body-secondary">No evidence uploaded yet.</Box>
+                      </div>
+                    )}
+                  </SpaceBetween>
+                ) : (
+                  <div className="detail-empty-state">
+                    <Box variant="h3">No item selected</Box>
+                    <Box className="muted-copy">
+                      Select an asset from the table to view custody details and administrative actions.
+                    </Box>
+                  </div>
+                )}
+              </Container>
+            </div>
           );
 
         case '#audit-events':
@@ -3067,6 +3456,16 @@ export default function App({ walletButton }: AppProps) {
             >
               <SpaceBetween size="l">
                 {notifications.length > 0 && <Flashbar items={notifications} />}
+                
+                {blockchainConfig?.mode === 'anvil' && connectedAddress && session?.walletAddress && connectedAddress.toLowerCase() !== session.walletAddress.toLowerCase() && (
+                  <Alert
+                    type="error"
+                    header="Connected Wallet Mismatch"
+                  >
+                    Your connected MetaMask wallet address (<strong>{connectedAddress.slice(0, 8)}...{connectedAddress.slice(-6)}</strong>) does not match the registered wallet for your signed-in workspace account (<strong>{session.walletAddress.slice(0, 8)}...{session.walletAddress.slice(-6)}</strong>). Please open your MetaMask extension and switch to the correct account to prevent transaction failures.
+                  </Alert>
+                )}
+                
                 {renderContent()}
               </SpaceBetween>
             </ContentLayout>
@@ -3178,6 +3577,168 @@ export default function App({ walletButton }: AppProps) {
               <Button variant="link" onClick={() => setIsBuyFractionsModalVisible(false)}>Cancel</Button>
               <Button variant="primary" formAction="submit" loading={actionLoadingId === selectedFracAsset?.assetId}>
                 Buy Fractions
+              </Button>
+            </div>
+          </SpaceBetween>
+        </form>
+      </Modal>
+
+      {/* Staff Unboxing Modal */}
+      <Modal
+        onDismiss={() => setIsUnboxingModalVisible(false)}
+        visible={isUnboxingModalVisible}
+        closeAriaLabel="Close modal"
+        header="Upload Unboxing Proof"
+      >
+        <form onSubmit={onSubmitUnboxingProof}>
+          <SpaceBetween size="m">
+            <FormField label="Asset ID">
+              <Input value={unboxingAssetId} disabled />
+            </FormField>
+            <FormField label="Unboxing Evidence File" description="Upload the video/photo of the unboxing verification.">
+              <FileUpload
+                onChange={({ detail }) => setUnboxingFiles(detail.value)}
+                value={unboxingFiles}
+                i18nStrings={{
+                  uploadButtonText: e =>
+                    e ? "Choose files" : "Choose file",
+                  dropzoneText: e =>
+                    e ? "Drop files to upload" : "Drop file to upload",
+                  removeFileAriaLabel: e =>
+                    `Remove file ${e + 1}`,
+                  limitShowFewer: "Show fewer",
+                  limitShowMore: "Show more",
+                  errorIconAriaLabel: "Error"
+                }}
+                showFileLastModified
+                showFileSize
+                showFileThumbnail
+                tokenLimit={1}
+                constraintText="Upload JPG, PNG, MP4 or PDF up to 10MB."
+              />
+            </FormField>
+            <div className="modal-actions">
+              <Button variant="link" onClick={() => setIsUnboxingModalVisible(false)}>Cancel</Button>
+              <Button variant="primary" formAction="submit" loading={submittingUnboxing}>
+                Submit Proof
+              </Button>
+            </div>
+          </SpaceBetween>
+        </form>
+      </Modal>
+
+      {/* Marketplace Detail Modal */}
+      <Modal
+        onDismiss={() => setIsMarketplaceDetailVisible(false)}
+        visible={isMarketplaceDetailVisible}
+        closeAriaLabel="Close modal"
+        header="Product Details"
+        size="large"
+      >
+        {selectedMarketplaceListing ? (() => {
+          const asset = dashboard?.assets.find((a) => a.id === selectedMarketplaceListing.assetId);
+          return (
+            <SpaceBetween size="l">
+              <div className="two-column-layout">
+                <div>
+                  <Box variant="h2" padding={{ bottom: 'xs' }}>{asset ? asset.title : 'Product'}</Box>
+                  <Box variant="p" color="text-body-secondary" padding={{ bottom: 'm' }}>
+                    Category: <strong>{asset ? asset.category : 'Unknown'}</strong> | Seller: <strong>{selectedMarketplaceListing.sellerId}</strong>
+                  </Box>
+                  
+                  <Container header={<Header variant="h3">Description</Header>}>
+                    <Box variant="p">{asset ? asset.description : 'No description provided.'}</Box>
+                  </Container>
+
+                  <div style={{ marginTop: '16px' }}>
+                    <Container header={<Header variant="h3">Price & Terms</Header>}>
+                      <div className="summary-grid">
+                        <div className="summary-item">
+                          <Box variant="awsui-key-label">Marketplace Price</Box>
+                          <Box variant="h2" color="inherit"><strong>{selectedMarketplaceListing.price.toLocaleString()} USDC</strong></Box>
+                        </div>
+                        <div className="summary-item">
+                          <Box variant="awsui-key-label">Layaway Deposit (20%)</Box>
+                          <Box variant="h3">{(selectedMarketplaceListing.price * 0.2).toLocaleString()} USDC</Box>
+                        </div>
+                      </div>
+                    </Container>
+                  </div>
+                </div>
+
+                <Container header={<Header variant="h3">Product Images & Verification</Header>}>
+                  <SpaceBetween size="m">
+                    {marketplaceDetailEvidence.length > 0 ? (
+                      <div className="detail-carousel-or-list">
+                        {marketplaceDetailEvidence.map((ev) => (
+                          <div key={ev.id} className="evidence-preview-container" style={{ border: '1px solid #d5dbdb', borderRadius: '8px', padding: '12px', background: '#f8f9f9', marginBottom: '12px' }}>
+                            <Box variant="awsui-key-label" padding={{ bottom: 'xs' }}>
+                              {ev.kind === 'CUSTOMER_PRE_SHIPMENT' ? 'Seller Pre-shipment Photo' : ev.kind === 'STAFF_UNBOXING' ? 'Vault Verification Check' : 'Evidence'}
+                            </Box>
+                            <div className="evidence-media-wrapper" style={{ marginTop: '6px', display: 'flex', justifyContent: 'center' }}>
+                              {ev.uri.startsWith('data:image/') ? (
+                                <img src={ev.uri} alt="Product Detail" style={{ maxWidth: '100%', maxHeight: '300px', borderRadius: '4px', border: '1px solid #d5dbdb', objectFit: 'contain' }} />
+                              ) : ev.uri.startsWith('data:video/') ? (
+                                <video src={ev.uri} controls style={{ maxWidth: '100%', maxHeight: '300px', borderRadius: '4px', border: '1px solid #d5dbdb' }} />
+                              ) : (
+                                <Box color="text-body-secondary">
+                                  Document Hash: <code>{ev.contentHash.slice(0, 16)}...</code>
+                                </Box>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <Box variant="p" color="text-body-secondary">No detailed verification images uploaded yet.</Box>
+                    )}
+                  </SpaceBetween>
+                </Container>
+              </div>
+
+              <div className="modal-actions" style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+                <Button variant="link" onClick={() => setIsMarketplaceDetailVisible(false)}>Close</Button>
+                <Button
+                  variant={selectedMarketplaceListing.status === 'ACTIVE' && selectedMarketplaceListing.sellerId !== session?.userId ? 'primary' : 'normal'}
+                  loading={actionLoadingId === selectedMarketplaceListing.id}
+                  disabled={selectedMarketplaceListing.status !== 'ACTIVE' || selectedMarketplaceListing.sellerId === session?.userId}
+                  onClick={() => {
+                    setIsMarketplaceDetailVisible(false);
+                    handleBuy(selectedMarketplaceListing);
+                  }}
+                >
+                  Buy with Layaway
+                </Button>
+              </div>
+            </SpaceBetween>
+          );
+        })() : null}
+      </Modal>
+
+      {/* Resolve Dispute Modal */}
+      <Modal
+        onDismiss={() => setIsResolveDisputeModalVisible(false)}
+        visible={isResolveDisputeModalVisible}
+        closeAriaLabel="Close modal"
+        header="Resolve Asset Dispute"
+      >
+        <form onSubmit={onSubmitResolveDispute}>
+          <SpaceBetween size="m">
+            <FormField label="Asset ID">
+              <Input value={disputeAssetId || ''} disabled />
+            </FormField>
+            <FormField label="Resolution Details" description="Describe how the dispute was resolved. This will transition the asset status back to RECEIVED.">
+              <Textarea
+                value={resolutionText}
+                onChange={({ detail }) => setResolutionText(detail.value)}
+                placeholder="Enter resolution details..."
+                rows={4}
+              />
+            </FormField>
+            <div className="modal-actions">
+              <Button variant="link" onClick={() => setIsResolveDisputeModalVisible(false)}>Cancel</Button>
+              <Button variant="primary" formAction="submit" loading={submittingResolution}>
+                Resolve Dispute
               </Button>
             </div>
           </SpaceBetween>

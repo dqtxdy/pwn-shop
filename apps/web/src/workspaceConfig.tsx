@@ -31,6 +31,7 @@ export const pageLabelMap: Record<string, string> = {
   '#appraisals': 'Appraisals',
   '#offer-drafting': 'Offer Drafting',
   '#admin-overview': 'Overview',
+  '#admin-assets': 'Asset Inventory & Evidence',
   '#audit-events': 'Audit Events',
   '#risk-parameters': 'Risk Parameters',
   '#protocol-treasury': 'Protocol Treasury',
