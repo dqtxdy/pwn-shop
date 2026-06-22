@@ -153,8 +153,8 @@ DB_PORT=5432
 DB_USERNAME=postgres
 DB_PASSWORD=postgres
 DB_DATABASE=pwn_shop
-DB_SYNCHRONIZE=true
-DB_MIGRATIONS_RUN=false
+DB_SYNCHRONIZE=false
+DB_MIGRATIONS_RUN=true
 ```
 
 Start the app:
